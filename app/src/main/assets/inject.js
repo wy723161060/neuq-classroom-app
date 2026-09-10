@@ -319,5 +319,396 @@
       return JSON.stringify({ ok: false, error: String((e && e.message) || e) });
     }
   };
+  /* ==================== 课表抓取 ====================
+   * 树维教务的课表页返回一个空 HTML 表格加一段 JS 脚本，课程数据以
+   * new TaskActivity(...) 写在脚本里，只能从脚本文本提取，不能解析 DOM。
+   * 解析逻辑移植自 shiguang_warehouse 的 resources/NEUQ/neuq.js（同一套 EAMS）。
+   */
+
+  /* 东秦作息时间表（12 节） */
+  var TIME_SLOTS = [
+    { n: 1, s: "08:00", e: "08:45" },
+    { n: 2, s: "08:50", e: "09:35" },
+    { n: 3, s: "10:05", e: "10:50" },
+    { n: 4, s: "10:55", e: "11:40" },
+    { n: 5, s: "14:00", e: "14:45" },
+    { n: 6, s: "14:50", e: "15:35" },
+    { n: 7, s: "16:05", e: "16:50" },
+    { n: 8, s: "16:55", e: "17:40" },
+    { n: 9, s: "18:40", e: "19:25" },
+    { n: 10, s: "19:30", e: "20:15" },
+    { n: 11, s: "20:25", e: "21:10" },
+    { n: 12, s: "21:15", e: "22:00" }
+  ];
+
+  function weekdayOf(dateStr) {
+    var p = String(dateStr).split("-");
+    if (p.length !== 3) return "";
+    var d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    return isNaN(d.getTime()) ? "" : WD[d.getDay()];
+  }
+
+  /* 取 JS 字面量字符串的内容：去掉引号，变量拼接则回退为变量名 */
+  function unquoteJsLiteral(token) {
+    var t = String(token == null ? "" : token).trim();
+    if (!t || t === "null" || t === "undefined") return "";
+    if ((t.charAt(0) === '"' && t.slice(-1) === '"') ||
+        (t.charAt(0) === "'" && t.slice(-1) === "'")) {
+      return t.slice(1, -1);
+    }
+    if (t.indexOf("+") >= 0 && /^[a-zA-Z_$][\w$]*\s*\+/.test(t)) {
+      return t.split("+")[0].trim();
+    }
+    return t;
+  }
+
+  /* 按逗号分割 JS 实参，忽略引号内的逗号与转义 */
+  function splitJsArgs(argsText) {
+    var args = [], cur = "", inQuote = "", escaped = false;
+    for (var i = 0; i < argsText.length; i++) {
+      var ch = argsText.charAt(i);
+      if (escaped) { cur += ch; escaped = false; continue; }
+      if (ch === "\\") { cur += ch; escaped = true; continue; }
+      if (inQuote) { cur += ch; if (ch === inQuote) inQuote = ""; continue; }
+      if (ch === '"' || ch === "'") { cur += ch; inQuote = ch; continue; }
+      if (ch === ",") { args.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    if (cur.trim() || /,$/.test(argsText)) args.push(cur.trim());
+    return args;
+  }
+
+  /* 周次位图：字符串下标 i 为 "1" 表示第 i 周有课 */
+  function parseWeeksBitmap(bitmap) {
+    var weeks = [];
+    if (!bitmap || typeof bitmap !== "string") return weeks;
+    for (var i = 0; i < bitmap.length; i++) {
+      if (bitmap.charAt(i) === "1") weeks.push(i);
+    }
+    return weeks;
+  }
+
+  function normalizeWeeks(weeks) {
+    var seen = {}, list = [];
+    (weeks || []).forEach(function (w) {
+      if (typeof w === "number" && w > 0 && !seen[w]) { seen[w] = 1; list.push(w); }
+    });
+    list.sort(function (a, b) { return a - b; });
+    return list;
+  }
+
+  /* 去掉课名末尾的课程序号，如「高等数学(01)」→「高等数学」 */
+  function cleanCourseName(name) {
+    return String(name == null ? "" : name).replace(/\([\d.]+\)\s*$/, "").trim();
+  }
+
+  /* 教师是变量拼接时，从前面的 actTeachers 数组里取真实姓名 */
+  function resolveActTeachers(fullText, endIdx) {
+    var seg = fullText.slice(Math.max(0, endIdx - 2200), endIdx);
+    var re = /var\s+actTeachers\s*=\s*\[([\s\S]*?)\]\s*;/g;
+    var m, last = null;
+    while ((m = re.exec(seg)) !== null) last = m[1];
+    if (!last) return "";
+    var names = [], nm;
+    var nameRe = /name\s*:\s*(?:"([^"]*)"|'([^']*)')/g;
+    while ((nm = nameRe.exec(last)) !== null) {
+      var v = (nm[1] || nm[2] || "").trim();
+      if (v) names.push(v);
+    }
+    if (!names.length) return "";
+    var uniq = [];
+    names.forEach(function (n) { if (uniq.indexOf(n) < 0) uniq.push(n); });
+    return uniq.join(",");
+  }
+
+  /* 课名是变量拼接时，取前面定义的 courseName 字面量 */
+  function resolveCourseNameVar(fullText, endIdx) {
+    var seg = fullText.slice(Math.max(0, endIdx - 3000), endIdx);
+    var re = /(?:var\s+)?courseName\s*=\s*(?:"([^"]*)"|'([^']*)')(?:\s*;)?/gi;
+    var m, values = [];
+    while ((m = re.exec(seg)) !== null) {
+      var v = (m[1] || m[2] || "").trim();
+      if (v) values.push(v);
+    }
+    return values.length ? values[values.length - 1] : "";
+  }
+
+  /* 核心：从课表页脚本里解析 new TaskActivity(...) */
+  function parseTaskActivities(text) {
+    var src = String(text || "");
+    var courses = [];
+    if (!src) return courses;
+
+    var re = /activity\s*=\s*new\s+TaskActivity\(([\s\S]*?)\);([\s\S]*?)(?=var\s+taskId|activity\s*=\s*new|$)/g;
+    var m;
+    while ((m = re.exec(src)) !== null) {
+      var args = splitJsArgs(m[1]);
+      if (args.length < 7) continue;
+
+      /* 教师/课名可能是变量或变量拼接（actTeachers.join(',') / courseName+"(01)"），
+         也可能是裸变量名，三种情况都要回源码里找真实值 */
+      var teacher = unquoteJsLiteral(args[1]);
+      if (args[1] && !/^['"]/.test(String(args[1]).trim())
+          && /join\s*\(|actTeachers/.test(args[1])) {
+        var rt = resolveActTeachers(src, m.index);
+        if (rt) teacher = rt;
+      }
+
+      var name = unquoteJsLiteral(args[3]);
+      if (args[3] && !/^['"]/.test(String(args[3]).trim()) && /courseName/.test(args[3])) {
+        var rn = resolveCourseNameVar(src, m.index);
+        if (rn) {
+          var sm = String(args[3]).match(/\+\s*["']([^)]+)["']$/);
+          name = rn + (sm ? "(" + sm[1] + ")" : "");
+        }
+      }
+      name = cleanCourseName(name);
+
+      var position = unquoteJsLiteral(args[5])
+        .replace(/"/g, "").replace(/\(.*\)/g, "").trim();
+      var weeks = normalizeWeeks(parseWeeksBitmap(unquoteJsLiteral(args[6])));
+
+      /* 后续代码块里的 index = 星期 * unitCount + 节次 */
+      var idxRe = /index\s*=\s*(\d+)\s*\*\s*unitCount\s*\+\s*(\d+)/g;
+      var im, sections = [], day = -1;
+      while ((im = idxRe.exec(m[2])) !== null) {
+        day = parseInt(im[1], 10) + 1;
+        sections.push(parseInt(im[2], 10) + 1);
+      }
+
+      if (day !== -1 && sections.length > 0) {
+        sections.sort(function (a, b) { return a - b; });
+        courses.push({
+          name: name,
+          teacher: teacher,
+          position: position,
+          day: day,
+          startSection: sections[0],
+          endSection: sections[sections.length - 1],
+          weeks: weeks
+        });
+      }
+    }
+    return mergeContiguous(courses);
+  }
+
+  /* 同一门课在相邻节次连续时合并成一条 */
+  function mergeContiguous(list) {
+    var arr = (list || []).filter(function (c) {
+      return c && c.name && typeof c.day === "number" &&
+             typeof c.startSection === "number" && typeof c.endSection === "number";
+    });
+    arr.sort(function (a, b) {
+      if (a.day !== b.day) return a.day - b.day;
+      return a.startSection - b.startSection;
+    });
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var item = arr[i];
+      var prev = out.length ? out[out.length - 1] : null;
+      var same = prev && prev.name === item.name && prev.teacher === item.teacher
+        && prev.position === item.position && prev.day === item.day
+        && prev.weeks.join(",") === item.weeks.join(",");
+      if (same && prev.endSection + 1 === item.startSection) {
+        prev.endSection = item.endSection;
+      } else {
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  async function fetchText(url, options) {
+    var opt = options || {};
+    opt.credentials = "same-origin";
+    var r = await fetch(url, opt);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.text();
+  }
+
+  /* 诊断信息：抓取/解析失败时回传给 App，便于教务改版后快速定位 */
+  function diagOf(url, html, extra) {
+    var fromEntry = !html && !!lastEntryHtml;
+    var s = String(html || lastEntryHtml || "");
+    var all = s.match(/TaskActivity/g);
+    var idx = s.indexOf("TaskActivity");
+    var d = {
+      url: String(url || "") || (fromEntry ? "[入口页] courseTableForStd.action" : ""),
+      source: fromEntry ? "entryPage" : (html ? "response" : "none"),
+      len: s.length,
+      taskActivityCount: all ? all.length : 0,
+      snippet: s.replace(/<script[\s\S]*?<\/script>/gi, " ")
+               .replace(/<[^>]+>/g, " ")
+               .replace(/\s+/g, " ").trim().slice(0, 200),
+      jsHint: idx >= 0
+        ? s.slice(Math.max(0, idx - 140), idx + 420).replace(/\s+/g, " ").trim()
+        : ""
+    };
+    if (extra) {
+      for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) d[k] = extra[k]; }
+    }
+    return d;
+  }
+
+  /* dataQuery 返回的是 JS 对象字面量而非严格 JSON，先试 JSON.parse 再回退 */
+  function parseLooseJson(raw) {
+    var t = String(raw || "").trim();
+    if (!t) throw new Error("空响应");
+    try { return JSON.parse(t); } catch (e) { /* 继续尝试 */ }
+    try { return Function("return (" + t + ");")(); } catch (e2) {
+      throw new Error("学期数据解析失败");
+    }
+  }
+
+  /* 从课表入口页提取学号 ids 和学期组件 tagId
+     入口页 HTML 存进 lastEntryHtml：这一步失败时往往正是会话过期，
+     诊断需要它才能告诉用户「到底拿到了什么页面」 */
+  var lastEntryHtml = "";
+  async function detectEntry(BASE) {
+    var html = await fetchText(BASE + "courseTableForStd.action?&sf_request_type=ajax", {
+      method: "GET",
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    });
+    lastEntryHtml = html;
+    if (html.indexOf("请登录") >= 0 || html.indexOf("actionError") >= 0) {
+      throw new Error("会话已过期，请重新登录教务");
+    }
+    var idsM = html.match(/bg\.form\.addInput\(form,"ids","(\d+)"\)/);
+    var tagM = html.match(/id="(semesterBar\d+Semester)"/);
+    if (!idsM || !tagM) {
+      throw new Error("未能识别学号或学期组件，请确认已登录教务");
+    }
+    return { studentId: idsM[1], tagId: tagM[1] };
+  }
+
+  /* 第一步：拉取可选学期列表 */
+  window.nqScheduleTerms = async function () {
+    var url = "", raw = "";
+    try {
+      var BASE = base();
+      var entry = await detectEntry(BASE);
+      url = BASE + "dataQuery.action?sf_request_type=ajax";
+      raw = await fetchText(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: "tagId=" + encodeURIComponent(entry.tagId) + "&dataType=semesterCalendar"
+      });
+      var data = parseLooseJson(raw);
+      var terms = [];
+      if (data && data.semesters && typeof data.semesters === "object") {
+        Object.keys(data.semesters).forEach(function (k) {
+          var arr = data.semesters[k];
+          if (!arr || typeof arr.length !== "number") return;
+          for (var i = 0; i < arr.length; i++) {
+            var s = arr[i];
+            if (!s || !s.id) continue;
+            terms.push({
+              id: String(s.id),
+              name: (String(s.schoolYear || "") + " " + String(s.name || "") + "学期").trim()
+            });
+          }
+        });
+      }
+      if (!terms.length) throw new Error("学期列表为空");
+      window.Android.onScheduleTerms(JSON.stringify({
+        ok: true, studentId: entry.studentId, terms: terms
+      }));
+    } catch (e) {
+      window.Android.onScheduleTerms(JSON.stringify({
+        ok: false,
+        error: String((e && e.message) || e),
+        diag: diagOf(url, raw, { stage: "terms" })
+      }));
+    }
+  };
+
+  /* 第二步：按学期 id 拉取课表并解析 */
+  window.nqSchedule = async function (semesterId, termName) {
+    var url = "", html = "";
+    try {
+      var BASE = base();
+      var entry = await detectEntry(BASE);
+      url = BASE + "courseTableForStd!courseTable.action?sf_request_type=ajax";
+      html = await fetchText(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: [
+          "ignoreHead=1",
+          "setting.kind=std",
+          "startWeek=",
+          "semester.id=" + encodeURIComponent(String(semesterId)),
+          "ids=" + encodeURIComponent(entry.studentId)
+        ].join("&")
+      });
+      if (html.indexOf("请登录") >= 0 || html.indexOf("actionError") >= 0) {
+        throw new Error("会话已过期，请重新登录教务");
+      }
+      var courses = parseTaskActivities(html);
+      if (!courses.length) {
+        var hit = html.match(/TaskActivity/g);
+        throw new Error("未解析到课程（响应 " + html.length + " 字节，"
+          + (hit ? "含 TaskActivity " + hit.length + " 处" : "无 TaskActivity") + "）");
+      }
+      window.Android.onSchedule(JSON.stringify({
+        ok: true,
+        semesterId: String(semesterId),
+        termName: String(termName || ""),
+        courses: courses,
+        timeSlots: TIME_SLOTS,
+        updated: new Date().toLocaleString("zh-CN")
+      }));
+    } catch (e) {
+      window.Android.onSchedule(JSON.stringify({
+        ok: false,
+        error: String((e && e.message) || e),
+        diag: diagOf(url, html, {
+          stage: "courses",
+          semesterId: String(semesterId || ""),
+          termName: String(termName || "")
+        })
+      }));
+    }
+  };
+
+  /* 课表跳空教室：只查指定日期的单个时段，一次请求即可返回 */
+  window.nqFetchSlot = async function (date, tb, te, label) {
+    try {
+      var BASE = base();
+      var rows = await query(BASE, String(date), String(tb), String(te));
+      var g = {}, cnt = 0, raw = 0;
+      rows.forEach(function (r) {
+        raw++;
+        var nm0 = trim(r["名称"]);
+        var b = trim(r["教学楼"]) || inferBuilding(nm0) || "其他";
+        if (!shouldKeep(b, nm0, trim(r["教室设备配置"]), trim(r["容量"]))) return;
+        var nm = cleanName(b, nm0);
+        if (!nm) return;
+        cnt++;
+        (g[b] = g[b] || []).push(nm);
+      });
+      window.Android.onResult(JSON.stringify({
+        ok: true,
+        single: true,
+        days: [{
+          date: String(date),
+          weekday: weekdayOf(date),
+          throttle: false,
+          slots: [{
+            label: String(label || (tb + "-" + te + "节")),
+            ok: true, count: cnt, buildings: g
+          }]
+        }],
+        throttled: false,
+        rawTotal: raw,
+        keptTotal: cnt,
+        filtered: raw - cnt,
+        updated: new Date().toLocaleString("zh-CN")
+      }));
+    } catch (e) {
+      window.Android.onResult(JSON.stringify({
+        ok: false, error: String((e && e.message) || e)
+      }));
+    }
+  };
   true;
 })();

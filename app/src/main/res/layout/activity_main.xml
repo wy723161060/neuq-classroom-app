@@ -51,6 +51,24 @@
             android:visibility="gone" />
 
         <Button
+            android:id="@+id/btnImport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="导入课表"
+            android:textSize="13sp"
+            android:minHeight="36dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnReimport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="重新导入"
+            android:textSize="13sp"
+            android:minHeight="36dp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/btnRefresh"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -83,4 +101,63 @@
             android:layout_height="match_parent"
             android:visibility="gone" />
     </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:orientation="horizontal"
+        android:background="#ffffff"
+        android:elevation="6dp">
+
+        <LinearLayout
+            android:id="@+id/tabSchedule"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground">
+
+            <View
+                android:id="@+id/indSchedule"
+                android:layout_width="26dp"
+                android:layout_height="3dp"
+                android:layout_marginBottom="5dp"
+                android:background="#1B4D8F" />
+
+            <TextView
+                android:id="@+id/tvSchedule"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="课表"
+                android:textSize="13sp"
+                android:textColor="#1B4D8F" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tabClassroom"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground">
+
+            <View
+                android:id="@+id/indClassroom"
+                android:layout_width="26dp"
+                android:layout_height="3dp"
+                android:layout_marginBottom="5dp"
+                android:background="#1B4D8F"
+                android:visibility="invisible" />
+
+            <TextView
+                android:id="@+id/tvClassroom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="空教室"
+                android:textSize="13sp"
+                android:textColor="#9aa2b4" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>
