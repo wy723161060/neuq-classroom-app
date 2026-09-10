@@ -547,15 +547,63 @@ public class MainActivity extends Activity {
 
     /* ---------- 生成表格 HTML（按楼层划分，对齐原项目） ---------- */
 
-    /** 按楼层划分的楼栋：工学馆按楼层分，其余楼栋整体一列 */
+    /** 按楼层划分的楼栋：工学馆按楼层分行，其余楼栋整体一行 */
     private static final String FLOOR_BUILDING = "工学馆";
     /** 工学馆实际到 8 层（含 803/825 等），取 9 层留余量 */
     private static final int MAX_FLOOR = 9;
 
-    /** 楼栋展示顺序（工学馆排第一，其余按此顺序） */
+    /**
+     * 楼栋 → 校区 Tab 的分组。
+     *
+     * 参照东秦空闲教室总表的三分区：工学馆（按楼层拆）、本部其它、南校区。
+     * 每组内的楼栋顺序即展示顺序；未列入的楼栋归到「本部其它」并追加在后。
+     */
+    private static final String[] CAMPUS_TABS = {"工学馆", "本部其它", "南校区"};
+    private static final String[][] CAMPUS_BUILDINGS = {
+            {"工学馆"},
+            {"基础楼", "综合实验楼", "地质楼", "管理楼"},
+            {"科技楼", "人文楼"}
+    };
+
+    /** 楼栋展示顺序（工学馆排第一，其余按此顺序），保留给课表联动等旧逻辑使用 */
     private static final String[] BUILDING_ORDER = {
             "工学馆", "基础楼", "综合实验楼", "地质楼", "管理楼", "科技楼", "人文楼"
     };
+
+    /**
+     * 空教室总表的交互脚本。
+     *
+     * 只用事件委托绑一次，不给每个元素挂 onclick —— 一天最多 3 个 Tab × 6 个时段，
+     * 内联 onclick 会让 HTML 膨胀不少，而且以后改结构容易漏。
+     */
+    private static final String TABLE_SCRIPT =
+            "<script>(function(){"
+            + "function closest(el,sel){while(el&&el.nodeType===1){if(el.matches(sel))return el;el=el.parentNode;}return null;}"
+            // 楼栋 Tab：切 active，同时让同容器内的 content 跟着切
+            + "function pickTab(btn){"
+            + "var bar=btn.parentNode;"
+            + "var kids=bar.children;"
+            + "for(var i=0;i<kids.length;i++){kids[i].classList.remove('active');}"
+            + "btn.classList.add('active');"
+            + "var box=bar.parentNode;"
+            + "for(var j=0;j<box.children.length;j++){"
+            + "var c=box.children[j];"
+            + "if(c.classList&&c.classList.contains('tab-content')){c.classList.remove('active');}"
+            + "}"
+            + "var target=document.getElementById(btn.getAttribute('data-tab'));"
+            + "if(target)target.classList.add('active');"
+            + "}"
+            // 时段折叠
+            + "function fold(h){"
+            + "h.classList.toggle('collapsed');"
+            + "var b=document.getElementById(h.getAttribute('data-fold'));"
+            + "if(b)b.classList.toggle('collapsed',h.classList.contains('collapsed'));"
+            + "}"
+            + "document.addEventListener('click',function(e){"
+            + "var t=closest(e.target,'.tab-button');if(t){pickTab(t);return;}"
+            + "var h=closest(e.target,'.timeslot-title');if(h){fold(h);return;}"
+            + "},false);"
+            + "})();</script>";
 
     private String buildHtml(JSONObject o) throws Exception {
         JSONArray days = o.getJSONArray("days");
@@ -563,7 +611,17 @@ public class MainActivity extends Activity {
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.append("<title>东秦空教室速查</title><style>").append(css).append("</style></head><body>");
-        sb.append("<h1>东秦 · 空闲教室速查</h1>");
+
+        // 页头：先给「今天」的日期，再给表格标题（对齐参考站点的版式）
+        int totalDays = days.length();
+        sb.append("<h1>空闲教室总表</h1>");
+        sb.append("<p class=\"info-text\">数据实时取自教务系统 · 更新于 ")
+                .append(esc(o.optString("updated", ""))).append("</p>");
+        int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
+        if (raw > 0) {
+            sb.append("<p class=\"info-text\">已排除实验室、机房、语音室等非自习教室：原始 ")
+                    .append(raw).append(" 条 → 保留 <b>").append(kept).append("</b> 条</p>");
+        }
 
         // 离线缓存提示
         if (o.optBoolean("fromCache", false)) {
@@ -573,23 +631,15 @@ public class MainActivity extends Activity {
             sb.append("<div class=\"cache")
                     .append(expired || stale ? " expired" : "").append("\">");
             if (expired) {
-                sb.append("数据已过期（").append(esc(age)).append("），请点「刷新数据」");
+                sb.append("数据已过期（").append(esc(age)).append("），请刷新");
             } else if (stale) {
                 sb.append("这是 <b>")
                         .append(esc(cacheFirstDate(o))).append("</b> 的数据，不是今天的 · ")
-                        .append(esc(age)).append("抓取，点「刷新数据」看今天的");
+                        .append(esc(age)).append("抓取");
             } else {
-                sb.append("今日空教室 · 上次抓取于 ").append(esc(age));
+                sb.append("离线数据 · 上次抓取于 ").append(esc(age));
             }
             sb.append("</div>");
-        }
-
-        sb.append("<p class=\"upd\">数据实时取自教务系统 · 更新于 ")
-                .append(o.optString("updated", "")).append("</p>");
-        int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
-        if (raw > 0) {
-            sb.append("<p class=\"upd\">已排除实验室、机房、语音室、活动教室、体育场地等非自习教室：原始 ")
-                    .append(raw).append(" 条 → 保留 <b>").append(kept).append("</b> 条</p>");
         }
 
         // 图例
@@ -619,7 +669,7 @@ public class MainActivity extends Activity {
             String dDate = d.getString("date");
             boolean isToday = dDate.equals(dateStr(System.currentTimeMillis()));
             boolean isJumped = dDate.equals(highlightDate);
-            sb.append("<details").append(i == 0 ? " open" : "").append("><summary>")
+            sb.append("<details class=\"day\"").append(i == 0 ? " open" : "").append("><summary>")
                     .append(esc(dDate)).append(" 周").append(esc(d.optString("weekday", "")))
                     .append(isToday ? "<span class=\"tag\">今天</span>" : "")
                     .append(isJumped ? "<span class=\"tag jump\">从课表跳来</span>" : "")
@@ -635,104 +685,208 @@ public class MainActivity extends Activity {
                         .append(" 节</b>，怕你还想看看别的时段，这一天整个都查了。</p>");
             }
 
-            // 各时段条数概览
-            sb.append("<p class=\"cnts\">");
-            for (int s = 0; s < nSlot; s++) {
-                JSONObject slot = slots.getJSONObject(s);
-                boolean hit = isJumped && s == highlightTb - 1;
-                if (hit) sb.append("<mark>");
-                sb.append(esc(slot.getString("label"))).append("：")
-                        .append(slot.optBoolean("ok", false)
-                                ? slot.optInt("count", 0) + " 间" : "失败");
-                if (hit) sb.append("</mark>");
-                sb.append("　");
-            }
-            sb.append("</p>");
-
             // 全天空闲集合（用于加粗）
             java.util.Map<String, java.util.Set<String>> allDay = computeAllDayFree(slots);
 
-            sb.append("<div class=\"wrap\"><table><thead><tr><th class=\"blead\">楼栋 / 楼层</th>");
-            for (int s = 0; s < nSlot; s++) {
-                sb.append("<th class=\"slot\">")
-                        .append(esc(slots.getJSONObject(s).getString("label")))
-                        .append("</th>");
-            }
-            sb.append("</tr></thead><tbody>");
-
-            for (String b : ordered) {
-                if (FLOOR_BUILDING.equals(b)) {
-                    // 工学馆：按 1-7 层分行
-                    sb.append("<tr><td class=\"bld group\" colspan=\"").append(nSlot + 1)
-                            .append("\">").append(esc(b)).append("（按楼层）</td></tr>");
-                    for (int floor = 1; floor <= MAX_FLOOR; floor++) {
-                        appendRow(sb, slots, b, floor, allDay, "floor");
-                    }
-                    // 无法归入 1-7 层的房间（如 8 层以上/非数字）
-                    appendRow(sb, slots, b, 0, allDay, "floor");
-                } else {
-                    appendRow(sb, slots, b, -1, allDay, "");
-                }
-            }
-            sb.append("</tbody></table></div></details>");
+            appendCampusTabs(sb, i, days, slots, ordered, allDay, isJumped);
+            sb.append("</details>");
         }
 
         sb.append("<p class=\"foot\">数据仅在你已登录的教务会话中读取，不会上传任何信息。</p>");
+        sb.append(TABLE_SCRIPT);
         sb.append("</body></html>");
         return sb.toString();
     }
 
     /**
-     * 输出一行。
+     * 输出某一天的「楼栋 Tab + 时段表格」主体。
      *
-     * @param floor -1=整栋一列；0=该楼栋中无法归入 1-7 层的房间；1..7=指定楼层
-     * @param cls   附加到楼栋单元格的样式类
+     * 结构对齐东秦空闲教室总表：
+     *   楼栋 Tab（工学馆 / 本部其它 / 南校区）
+     *     └ 每个时段一个可折叠区块
+     *         └ 一张表：工学馆按楼层为行（1F…9F），其它楼栋以楼栋名为行
+     *
+     * @param dayIdx  第几天（用于生成唯一 DOM id）
+     * @param ordered 本日实际出现的楼栋，已排序
      */
-    private void appendRow(StringBuilder sb, JSONArray slots, String building, int floor,
-                           java.util.Map<String, java.util.Set<String>> allDay, String cls) {
+    private void appendCampusTabs(StringBuilder sb, int dayIdx, JSONArray days, JSONArray slots,
+                                  List<String> ordered,
+                                  java.util.Map<String, java.util.Set<String>> allDay,
+                                  boolean isJumped) throws Exception {
         int nSlot = slots.length();
 
-        // 先按楼层筛出每个时段的房间，全空则整行省略
-        List<List<String>> perSlot = new ArrayList<>();
-        boolean anyRoom = false;
-        for (int s = 0; s < nSlot; s++) {
-            List<String> rooms = new ArrayList<>();
-            JSONArray arr = roomsOf(slots, s, building);
-            if (arr != null) {
-                for (int k = 0; k < arr.length(); k++) {
-                    String r = arr.optString(k, "");
-                    if (r.isEmpty()) continue;
-                    if (floor > 0 && floorOf(r) != floor) continue;
-                    if (floor == 0 && floorOf(r) > 0 && floorOf(r) <= MAX_FLOOR) continue;
-                    rooms.add(r);
-                }
-            }
-            sortRooms(rooms);
-            if (!rooms.isEmpty()) anyRoom = true;
-            perSlot.add(rooms);
+        // 只保留本日真正有数据的 Tab；全空也保留工学馆，避免页面整个空掉
+        List<String> liveTabs = new ArrayList<>();
+        List<List<String>> liveBuildings = new ArrayList<>();
+        for (int t = 0; t < CAMPUS_TABS.length; t++) {
+            List<String> bs = new ArrayList<>();
+            for (String b : CAMPUS_BUILDINGS[t]) if (ordered.contains(b)) bs.add(b);
+            if (bs.isEmpty()) continue;
+            liveTabs.add(CAMPUS_TABS[t]);
+            liveBuildings.add(bs);
         }
-        if (!anyRoom) return;   // 该行整天空无教室，不显示
+        // 不在预设分组里的楼栋（教务新增了楼），统一塞进「本部其它」
+        List<String> known = new ArrayList<>();
+        for (String[] group : CAMPUS_BUILDINGS) {
+            for (String b : group) known.add(b);
+        }
+        for (String b : ordered) {
+            if (known.contains(b)) continue;
+            int qi = liveTabs.indexOf("本部其它");
+            if (qi < 0) {
+                liveTabs.add("本部其它");
+                liveBuildings.add(new ArrayList<>());
+                qi = liveTabs.size() - 1;
+            }
+            liveBuildings.get(qi).add(b);
+        }
 
-        String label = floor > 0 ? (floor + " 层") : building;
-        sb.append("<tr><td class=\"bld ").append(cls).append("\">").append(esc(label)).append("</td>");
+        if (liveTabs.isEmpty()) {
+            sb.append("<p class=\"empty-day\">这一天没有查到空闲教室</p>");
+            return;
+        }
+
+        sb.append("<div class=\"tab-container\"><div class=\"tab-buttons\">");
+        for (int t = 0; t < liveTabs.size(); t++) {
+            sb.append("<button class=\"tab-button").append(t == 0 ? " active" : "")
+                    .append("\" data-tab=\"tab-").append(dayIdx).append("-").append(t)
+                    .append("\">").append(esc(liveTabs.get(t))).append("</button>");
+        }
+        sb.append("</div>");
+
+        for (int t = 0; t < liveTabs.size(); t++) {
+            sb.append("<div class=\"tab-content").append(t == 0 ? " active" : "")
+                    .append("\" id=\"tab-").append(dayIdx).append("-").append(t).append("\">");
+            appendSlotSections(sb, dayIdx, t, slots, liveBuildings.get(t), allDay, isJumped);
+            sb.append("</div>");
+        }
+        sb.append("</div>");
+    }
+
+    /** 某个楼栋分组下，逐个时段输出「标题 + 表格」 */
+    private void appendSlotSections(StringBuilder sb, int dayIdx, int tabIdx, JSONArray slots,
+                                    List<String> buildings,
+                                    java.util.Map<String, java.util.Set<String>> allDay,
+                                    boolean isJumped) throws Exception {
+        int nSlot = slots.length();
+        boolean hasAny = false;
 
         for (int s = 0; s < nSlot; s++) {
-            List<String> rooms = perSlot.get(s);
-            sb.append("<td class=\"slot\">");
-            if (rooms.isEmpty()) {
-                sb.append("<span class=\"none\">—</span>");
+            JSONArray slotRow = buildSlotTable(slots, s, buildings, allDay);
+            if (slotRow == null) continue;    // 该时段本分组无教室，整块省略
+            hasAny = true;
+
+            String label = slots.getJSONObject(s).getString("label");
+            boolean hit = isJumped && s == highlightTb - 1;
+            int shown = slotRow.length();
+
+            // 标题：可折叠，默认展开；从课表跳来的那一节标记出来
+            sb.append("<h3 class=\"timeslot-title").append(hit ? " hit" : "")
+                    .append("\" data-fold=\"body-").append(dayIdx).append("-").append(tabIdx)
+                    .append("-").append(s).append("\">")
+                    .append("<span class=\"toggle-icon\"></span>")
+                    .append(esc(label))
+                    .append("<span class=\"cnt-mini\">（").append(shown).append(" 行）</span>")
+                    .append("</h3>");
+
+            sb.append("<div class=\"timeslot-body\" id=\"body-")
+                    .append(dayIdx).append("-").append(tabIdx).append("-").append(s).append("\">")
+                    .append("<table class=\"slot-table\">");
+
+            for (int r = 0; r < shown; r++) {
+                JSONArray row = slotRow.getJSONArray(r);
+                String head = row.getString(0);
+                String headCls = row.getString(1);
+                String cells = row.getString(2);
+                sb.append("<tr><td class=\"").append(headCls).append("\">")
+                        .append(esc(head)).append("</td>")
+                        .append("<td class=\"rooms\">").append(cells).append("</td></tr>");
+            }
+            sb.append("</table></div>");
+        }
+
+        if (!hasAny) {
+            sb.append("<p class=\"empty-day\">这些时段都没有空闲教室</p>");
+        }
+    }
+
+    /**
+     * 构建某个时段、某个楼栋分组下的表格行。
+     *
+     * 返回值为「行数组」，每行是 3 元组 [行头文字, 行头样式类, 教室单元格 HTML]：
+     *   · 工学馆 → 按楼层拆行，行头 "1F"…"9F"，样式类 floor
+     *   · 其它楼栋 → 每个楼栋一行，行头是楼栋名，样式类 building
+     * 该时段本分组完全没有教室时返回 null（调用方跳过整块）。
+     */
+    private JSONArray buildSlotTable(JSONArray slots, int slotIdx, List<String> buildings,
+                                     java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
+        int nSlot = slots.length();
+        JSONArray rows = new JSONArray();
+        boolean any = false;
+
+        for (String b : buildings) {
+            if (FLOOR_BUILDING.equals(b)) {
+                // 工学馆：1..MAX_FLOOR 逐层，另有无法归层的房间放最后一行
+                for (int floor = 1; floor <= MAX_FLOOR; floor++) {
+                    JSONArray r = slotRow(slots, slotIdx, nSlot, b, floor, allDay);
+                    if (r != null) { rows.put(r); any = true; }
+                }
+                JSONArray rest = slotRow(slots, slotIdx, nSlot, b, 0, allDay);
+                if (rest != null) { rows.put(rest); any = true; }
             } else {
-                sb.append("<span class=\"cnt\">").append(rooms.size()).append("</span>");
-                sb.append("<span class=\"rooms\">");
-                for (int k = 0; k < rooms.size(); k++) {
-                    if (k > 0) sb.append(" ");
-                    sb.append(styleRoom(rooms.get(k), building, s, nSlot, slots, allDay));
-                }
-                sb.append("</span>");
+                // 其余楼栋：整栋一行，不拆楼层
+                JSONArray r = slotRow(slots, slotIdx, nSlot, b, -1, allDay);
+                if (r != null) { rows.put(r); any = true; }
             }
-            sb.append("</td>");
         }
-        sb.append("</tr>");
+        return any ? rows : null;
+    }
+
+    /**
+     * 生成单行：[行头, 行头类名, 教室 HTML]，该行在本时段无教室则返回 null。
+     *
+     * @param floor -1=整栋一行；0=无法归入 1..MAX_FLOOR 的房间；1..MAX_FLOOR=指定楼层
+     */
+    private JSONArray slotRow(JSONArray slots, int slotIdx, int nSlot, String building, int floor,
+                              java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
+        List<String> rooms = new ArrayList<>();
+        JSONArray arr = roomsOf(slots, slotIdx, building);
+        if (arr != null) {
+            for (int k = 0; k < arr.length(); k++) {
+                String r = arr.optString(k, "");
+                if (r.isEmpty()) continue;
+                int f = floorOf(r);
+                if (floor > 0 && f != floor) continue;
+                if (floor == 0 && f > 0 && f <= MAX_FLOOR) continue;
+                rooms.add(r);
+            }
+        }
+        if (rooms.isEmpty()) return null;
+        sortRooms(rooms);
+
+        StringBuilder cells = new StringBuilder();
+        for (int k = 0; k < rooms.size(); k++) {
+            if (k > 0) cells.append(" ");
+            cells.append("<span class=\"r\">")
+                    .append(styleRoom(rooms.get(k), building, slotIdx, nSlot, slots, allDay))
+                    .append("</span>");
+        }
+
+        String head;
+        String cls;
+        if (floor > 0) {
+            head = floor + "F";
+            cls = "floor";
+        } else if (floor == 0) {
+            head = "其他";
+            cls = "floor";
+        } else {
+            head = building;
+            cls = "building";
+        }
+        JSONArray row = new JSONArray();
+        row.put(head).put(cls).put(cells.toString());
+        return row;
     }
 
     /** null 安全：取某天某时段的某楼栋房间数组 */
