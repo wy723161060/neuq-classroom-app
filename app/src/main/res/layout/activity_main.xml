@@ -67,14 +67,6 @@
             android:textSize="13sp"
             android:minHeight="36dp"
             android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btnRefresh"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="刷新"
-            android:textSize="13sp"
-            android:minHeight="36dp" />
     </LinearLayout>
 
     <ProgressBar

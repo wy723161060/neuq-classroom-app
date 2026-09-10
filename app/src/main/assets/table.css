@@ -24,6 +24,22 @@ h1 { font-size: 18px; margin: 4px 0 2px; }
   color: #fff; background: #1B4D8F; vertical-align: 1px;
 }
 
+/* 「从课表跳来」标签：浅色区分，别跟「今天」抢眼 */
+.tag.jump { color: #1B4D8F; background: #e3ecf8; }
+
+/* 从课表跳来时，说明为什么整天的数据都在这儿 */
+.jump-tip {
+  margin: 0; padding: 8px 14px; font-size: 12px;
+  color: #2a4a75; background: #eef4fc; border-top: 1px solid #dbe7f6;
+}
+.jump-tip b { font-weight: 700; }
+
+/* 高亮用户点的那一节 */
+.cnts mark {
+  padding: 1px 5px; border-radius: 5px;
+  color: #1B4D8F; background: #dbe8fa; font-weight: 700;
+}
+
 /* 图例 */
 .legend {
   display: flex; flex-wrap: wrap; gap: 10px;

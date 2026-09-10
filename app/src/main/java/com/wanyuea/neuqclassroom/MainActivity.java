@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
             "https://vpn.neuq.edu.cn/http/77726476706e69737468656265737421fae05988693e6d456f468ca88d1b203b/eams/";
     private boolean pendingQuery = false;
     private int queryDays = 1;
+    private int queryStartOffset = 0;   // 起始日相对今天的天数（0=今天，1=明天）
     private int queryGap = 1000;
 
     private WebView loginView;
@@ -72,7 +73,22 @@ public class MainActivity extends Activity {
     private TextView tvSchedule;
     private Button btnImport;
     private Button btnReimport;
-    private Button btnRefresh;
+
+    /* ---------- 顶栏按钮状态机 ----------
+       所有按钮显隐只由 applyUi(state) 一处决定。
+       以前是 30 处散落的 setVisibility，漏改一处就会出 bug
+       （比如返回键失效、空教室页残留课表按钮）。 */
+
+    /** 顶栏状态：决定哪些按钮可见 */
+    private enum UiState {
+        LOGIN,          // 教务 WebView 可见，等用户登录
+        ROOM_EMPTY,     // 空教室页，还没有数据 → 查空教室
+        ROOM_DATA,      // 空教室页，有数据 → 刷新数据
+        SCHEDULE_EMPTY, // 课表页，还没导入 → 导入课表
+        SCHEDULE_DATA,  // 课表页，有课表 → 重新导入
+        BUSY            // 任意页面正在查询/抓取
+    }
+    private UiState uiState = UiState.SCHEDULE_EMPTY;
 
     /* ---------- 课表状态 ---------- */
     private JSONObject scheduleData;        // 当前课表：courses / timeSlots / semesterId
@@ -87,6 +103,8 @@ public class MainActivity extends Activity {
     private String singleLabel = "";
     private int singleTb = 1;
     private int singleTe = 2;
+    private String highlightDate = "";      // 从课表跳过来时，要高亮的那一天
+    private int highlightTb = 0;            // 高亮的起始节次（0=不高亮）
 
     private static final String PREFS = "neuq_prefs";
     private static final String KEY_TERM_START = "termStart_";    // 第 1 周周一，毫秒
@@ -104,7 +122,6 @@ public class MainActivity extends Activity {
         btnQuery = findViewById(R.id.btnQuery);
         btnBack = findViewById(R.id.btnBack);
         btnRefreshData = findViewById(R.id.btnRefreshData);
-        btnRefresh = findViewById(R.id.btnRefresh);
         btnImport = findViewById(R.id.btnImport);
         btnReimport = findViewById(R.id.btnReimport);
         tabClassroom = findViewById(R.id.tabClassroom);
@@ -131,10 +148,6 @@ public class MainActivity extends Activity {
 
         btnQuery.setOnClickListener(v -> askDays());
         btnBack.setOnClickListener(v -> showLogin());
-        btnRefresh.setOnClickListener(v -> {
-            showLogin();
-            loginView.reload();
-        });
         btnRefreshData.setOnClickListener(v -> {
             showLogin();
             askDays();
@@ -192,7 +205,8 @@ public class MainActivity extends Activity {
                 pendingQuery = false;
                 statusText.setText("正在查询 " + queryDays + " 天 × 7 个时段…");
                 view.evaluateJavascript(injectJs, null);
-                view.evaluateJavascript("window.nqFetch(" + queryDays + "," + queryGap + ");", null);
+                view.evaluateJavascript("window.nqFetch(" + queryDays + ","
+                        + queryGap + "," + queryStartOffset + ");", null);
             }
 
             @Override
@@ -234,8 +248,7 @@ public class MainActivity extends Activity {
             statusText.setText("第 " + currentWeek() + " 周 · 课表来自本地缓存");
         } else {
             showScheduleHtml(emptyScheduleHtml());
-            btnImport.setVisibility(View.VISIBLE);
-            btnQuery.setVisibility(View.GONE);
+            applyUi(UiState.SCHEDULE_EMPTY);
             statusText.setText("还没有课表，点「导入课表」");
         }
 
@@ -268,17 +281,27 @@ public class MainActivity extends Activity {
     }
 
     private void askDays() {
-        final String[] items = {"仅今天（约 10 秒）", "近 3 天（约 25 秒）", "近 7 天（约 60 秒）"};
-        final int[] days = {1, 3, 7};
+        // 起始日 → 连续天数。选「明天」就是明天起连着 7 天，
+        // 因为教务接口只支持「某天 + 连续 N 天」，不能直接跳着查本周剩余几天。
+        final String[] items = {
+                "今天（1 天，约 10 秒）",
+                "明天起 7 天（约 60 秒）",
+                "今天起 7 天（约 60 秒）"
+        };
+        final int[] starts = {0, 1, 0};
+        final int[] days = {1, 7, 7};
         new AlertDialog.Builder(this)
                 .setTitle("查询范围")
-                .setItems(items, (dialog, which) -> startQuery(days[which]))
+                .setItems(items, (dialog, which) -> startQuery(starts[which], days[which]))
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void startQuery(int days) {
+    private void startQuery(int startOffsetDays, int days) {
+        queryStartOffset = startOffsetDays;
         queryDays = days;
+        highlightDate = "";        // 手动查的，不带课表高亮
+        highlightTb = 0;
         statusText.setText("正在打开教务查询页…");
         setBusy(true);
         progressBar.setProgress(0);
@@ -288,35 +311,88 @@ public class MainActivity extends Activity {
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
+    /**
+     * 顶栏按钮显隐的唯一出口。
+     *
+     * 调用方只管声明「现在处于什么状态」，不需要知道有哪些按钮、谁该隐藏。
+     * 想加按钮/改规则，只改这个方法。
+     */
+    private void applyUi(UiState state) {
+        uiState = state;
+        boolean room = (currentTab == TAB_CLASSROOM);
+
+        // 各状态下的按钮可见性
+        boolean vQuery = false, vBack = false, vRefreshData = false;
+        boolean vImport = false, vReimport = false;
+
+        switch (state) {
+            case LOGIN:
+                // 正看着教务网页：只给「查空教室」（课表 Tab 下给「导入课表」）
+                if (room) vQuery = true; else vImport = true;
+                break;
+            case ROOM_EMPTY:
+                vQuery = true;
+                break;
+            case ROOM_DATA:
+                vRefreshData = true;
+                break;
+            case SCHEDULE_EMPTY:
+                vImport = true;
+                break;
+            case SCHEDULE_DATA:
+                vReimport = true;
+                break;
+            case BUSY:
+                // 查询中：空教室页保留按钮位置（禁用态），课表页全部隐藏
+                if (room) vQuery = true;
+                break;
+        }
+
+        btnQuery.setVisibility(vQuery ? View.VISIBLE : View.GONE);
+        btnBack.setVisibility(vBack ? View.VISIBLE : View.GONE);
+        btnRefreshData.setVisibility(vRefreshData ? View.VISIBLE : View.GONE);
+        btnImport.setVisibility(vImport ? View.VISIBLE : View.GONE);
+        btnReimport.setVisibility(vReimport ? View.VISIBLE : View.GONE);
+
+        // 忙碌时禁用可点的按钮，避免重复触发
+        boolean busy = (state == UiState.BUSY);
+        btnQuery.setEnabled(!busy);
+        btnRefreshData.setEnabled(!busy);
+        btnImport.setEnabled(!busy);
+        btnReimport.setEnabled(!busy);
+    }
+
     private void showLogin() {
         resultView.setVisibility(View.GONE);
         loginView.setVisibility(View.VISIBLE);
-        btnBack.setVisibility(View.GONE);
-        btnRefreshData.setVisibility(View.GONE);
-        btnQuery.setVisibility(View.VISIBLE);
         statusText.setText("教务系统");
+        applyUi(UiState.LOGIN);
     }
 
-    /** 查询进行中：禁用按钮、显示进度 */
+    /** 查询进行中：显示进度条，并切到 BUSY 状态 */
     private void setBusy(boolean busy) {
         progressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
-        btnQuery.setEnabled(!busy);
-        btnRefreshData.setEnabled(!busy);
         if (busy) {
-            boolean room = (currentTab == TAB_CLASSROOM);
-            btnQuery.setVisibility(room ? View.VISIBLE : View.GONE);
-            btnBack.setVisibility(View.GONE);
-            btnRefreshData.setVisibility(View.GONE);
-            btnImport.setVisibility(View.GONE);
-            btnReimport.setVisibility(View.GONE);
+            applyUi(UiState.BUSY);
+        } else {
+            // 结束忙碌：回到当前 Tab 的常态（有没有数据决定具体状态）
+            applyIdleUi();
+        }
+    }
+
+    /** 当前 Tab 在非忙碌时应处的状态 */
+    private void applyIdleUi() {
+        if (currentTab == TAB_CLASSROOM) {
+            applyUi(ResultCache.load(this) != null ? UiState.ROOM_DATA : UiState.ROOM_EMPTY);
+        } else {
+            applyUi(scheduleData != null ? UiState.SCHEDULE_DATA : UiState.SCHEDULE_EMPTY);
         }
     }
 
     private void showHtml(String html) {
         loginView.setVisibility(View.GONE);
         resultView.setVisibility(View.VISIBLE);
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.VISIBLE);
+        applyUi(UiState.ROOM_DATA);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
@@ -351,7 +427,6 @@ public class MainActivity extends Activity {
                             c.put("cacheAgeText", ResultCache.ageText(MainActivity.this));
                             c.put("cacheExpired", ResultCache.isExpired(MainActivity.this));
                             showHtml(buildHtml(c));
-                            btnRefreshData.setVisibility(View.VISIBLE);
                             statusText.setText("实时查询失败，显示上次数据（"
                                     + ResultCache.ageText(MainActivity.this) + "）");
                         } else {
@@ -367,7 +442,6 @@ public class MainActivity extends Activity {
                     CookieManager.getInstance().flush();
 
                     showHtml(buildHtml(o));
-                    btnRefreshData.setVisibility(View.VISIBLE);
                     if (o.optBoolean("throttled", false)) {
                         statusText.setText("更新于 " + o.optString("updated", "")
                                 + "（疑似被限流，各时段数量相同，建议重查）");
@@ -544,9 +618,11 @@ public class MainActivity extends Activity {
 
             String dDate = d.getString("date");
             boolean isToday = dDate.equals(dateStr(System.currentTimeMillis()));
+            boolean isJumped = dDate.equals(highlightDate);
             sb.append("<details").append(i == 0 ? " open" : "").append("><summary>")
                     .append(esc(dDate)).append(" 周").append(esc(d.optString("weekday", "")))
                     .append(isToday ? "<span class=\"tag\">今天</span>" : "")
+                    .append(isJumped ? "<span class=\"tag jump\">从课表跳来</span>" : "")
                     .append("</summary>");
 
             if (d.optBoolean("throttle", false)) {
@@ -554,14 +630,22 @@ public class MainActivity extends Activity {
                         + "请点「返回教务」稍等几秒后重查。</p>");
             }
 
+            if (isJumped && highlightTb > 0) {
+                sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
+                        .append(" 节</b>，怕你还想看看别的时段，这一天整个都查了。</p>");
+            }
+
             // 各时段条数概览
             sb.append("<p class=\"cnts\">");
             for (int s = 0; s < nSlot; s++) {
                 JSONObject slot = slots.getJSONObject(s);
+                boolean hit = isJumped && s == highlightTb - 1;
+                if (hit) sb.append("<mark>");
                 sb.append(esc(slot.getString("label"))).append("：")
                         .append(slot.optBoolean("ok", false)
-                                ? slot.optInt("count", 0) + " 间" : "失败")
-                        .append("　");
+                                ? slot.optInt("count", 0) + " 间" : "失败");
+                if (hit) sb.append("</mark>");
+                sb.append("　");
             }
             sb.append("</p>");
 
@@ -855,6 +939,17 @@ public class MainActivity extends Activity {
         return (c.get(Calendar.MONTH) + 1) + "/" + c.get(Calendar.DAY_OF_MONTH);
     }
 
+    /** 当天 00:00:00.000 —— 用来算「目标日期距今天几天」 */
+    private static long startOfDay(long ms) {
+        Calendar c = Calendar.getInstance(Locale.CHINA);
+        c.setTimeInMillis(ms);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
     /** 当前应显示的周次 = 按开学日期推算 + 用户手动偏移 */
     private int currentWeek() {
         if (scheduleData == null) return 1;
@@ -898,12 +993,7 @@ public class MainActivity extends Activity {
         tvSchedule.setTextColor(room ? 0xFF9AA2B4 : 0xFF1B4D8F);
         if (sameTab && tab == TAB_CLASSROOM) return;
 
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
-        btnRefreshData.setVisibility(View.GONE);
-        btnRefresh.setVisibility(View.GONE);
-        btnImport.setVisibility(View.GONE);
-        btnReimport.setVisibility(View.GONE);
+        // 切 Tab 后按钮状态由下面的渲染路径各自设定，这里不用预设
 
         if (room) {
             String cached = ResultCache.load(this);
@@ -916,8 +1006,7 @@ public class MainActivity extends Activity {
                     // 缓存存的是「抓取当天起算」的若干天，隔天再打开首日就不是今天了
                     // 加一句提示，避免把昨天的空教室当成今天的
                     o.put("staleDay", isCacheStaleToday(o));
-                    showHtml(buildHtml(o));
-                    btnRefreshData.setVisibility(View.VISIBLE);
+                    showHtml(buildHtml(o));   // 内部会切到 ROOM_DATA
                     String age = ResultCache.ageText(this);
                     if (ResultCache.isExpired(this)) {
                         statusText.setText("数据已过期（" + age + "），建议刷新");
@@ -937,7 +1026,7 @@ public class MainActivity extends Activity {
                 renderSchedule();
             } else {
                 showScheduleHtml(emptyScheduleHtml());
-                btnImport.setVisibility(View.VISIBLE);
+                applyUi(UiState.SCHEDULE_EMPTY);
                 statusText.setText("还没有课表，点「导入课表」");
             }
         }
@@ -1132,9 +1221,7 @@ public class MainActivity extends Activity {
         if (scheduleData == null) return;
         try {
             showScheduleHtml(buildScheduleHtml(scheduleData, currentWeek()));
-            btnImport.setVisibility(View.GONE);
-            btnReimport.setVisibility(View.VISIBLE);
-            btnBack.setVisibility(View.GONE);
+            applyUi(UiState.SCHEDULE_DATA);
         } catch (Exception e) {
             statusText.setText("课表渲染失败：" + e.getMessage());
         }
@@ -1143,8 +1230,6 @@ public class MainActivity extends Activity {
     private void showScheduleHtml(String html) {
         loginView.setVisibility(View.GONE);
         resultView.setVisibility(View.VISIBLE);
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
@@ -1270,35 +1355,54 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    /** 课表 → 空教室：算出该课所在日期，切到空教室页查这一时段 */
+    /**
+     * 课表 → 空教室：点到某天的空白时段，就把那一天完整查一遍。
+     *
+     * 以前只查被点的那一节课，用户看到「第 3-4 节有空教室」之后想知道「那第 5-6 节呢」
+     * 就得退回去重点一次。既然教务接口按「整天的连续 N 天」计价，索性一次把这一天 7 个
+     * 时段都拉回来，结果页里高亮用户点的那一节 —— 多花几秒，少点好几次。
+     */
     private void jumpToFreeRooms(int day, int startSection, int endSection) {
         if (scheduleData == null) return;
         if (day < 1 || day > 7) return;
 
         int week = currentWeek();
         long target = weekMonday(week) + (day - 1) * DAY_MS;
+        long today = System.currentTimeMillis();
+        int offset = (int) Math.round((target - startOfDay(today)) / (double) DAY_MS);
+
         String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " "
                 + startSection + "-" + endSection + " 节";
 
         // 切到空教室 Tab（复用 switchTab，保证按钮显隐与 Tab 高亮不会两处漂移）
         if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
-        else restoreRoomButtons();
+        else applyIdleUi();
 
-        singleDate = dateStr(target);
-        singleTb = startSection;
-        singleTe = endSection;
-        singleLabel = label;
-        pendingSingle = true;
-        statusText.setText("正在查询 " + label + " 的空教室…");
+        highlightDate = dateStr(target);
+        highlightTb = startSection;
+
+        if (offset < 0) {
+            // 过去的日子：整周查询装不下，退回单时段查询
+            singleDate = dateStr(target);
+            singleTb = startSection;
+            singleTe = endSection;
+            singleLabel = label;
+            pendingSingle = true;
+            statusText.setText("正在查询 " + label + " 的空教室…");
+            setBusy(true);
+            loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
+            return;
+        }
+
+        // 未来/今天：查这一天完整 7 个时段
+        queryStartOffset = offset;
+        queryDays = 1;
+        pendingQuery = true;
+        statusText.setText("正在查询 周" + WD_CN[day - 1] + " 全天 7 个时段的空教室"
+                + (offset == 0 ? "（今天）" : "…"));
         setBusy(true);
+        progressBar.setProgress(0);
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
-    }
-
-    /** 空教室 Tab 的顶栏按钮基线状态（清掉课表遗留的「重新导入」等按钮） */
-    private void restoreRoomButtons() {
-        btnImport.setVisibility(View.GONE);
-        btnReimport.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
     }
 
     /* ---------- 课程详情 ---------- */

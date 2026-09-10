@@ -204,9 +204,11 @@
     return rows;
   }
 
-  /* 主流程：N 天 × 7 个时段，串行 + 限速 + 过滤 + 空结果重试 */
-  window.nqFetch = async function (days, gapMs) {
+  /* 主流程：N 天 × 7 个时段，串行 + 限速 + 过滤 + 空结果重试
+     startOffset：起始日相对今天的天数（0=今天，1=明天） */
+  window.nqFetch = async function (days, gapMs, startOffset) {
     var GAP_MS = (typeof gapMs === "number" && gapMs >= 0) ? gapMs : GAP;
+    var OFF = (typeof startOffset === "number" && startOffset > 0) ? Math.floor(startOffset) : 0;
     try {
       var BASE = base();
       var out = [];
@@ -216,7 +218,7 @@
       var rawTotal = 0, keptTotal = 0;
 
       for (var i = 0; i < days; i++) {
-        var d = new Date(Date.now() + i * 86400000);
+        var d = new Date(Date.now() + (i + OFF) * 86400000);
         var date = dayStr(d);
         var wd = WD[d.getDay()];
         var slots = [];
