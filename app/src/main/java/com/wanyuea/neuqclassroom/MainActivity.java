@@ -661,7 +661,7 @@ public class MainActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-        sb.append("<title>东秦空教室速查</title><style>").append(css).append("</style></head><body>");
+        sb.append("<title>东秦课表 · 空闲教室速查</title><style>").append(css).append("</style></head><body>");
 
         // 页头：先给「今天」的日期，再给表格标题（对齐参考站点的版式）
         sb.append("<h1>空闲教室总表</h1>");
@@ -1096,7 +1096,19 @@ public class MainActivity extends Activity {
 
     /* 外部链接集中在这里，改地址只改这一处 */
     private static final String APP_REPO = "https://github.com/wy723161060/neuq-classroom-app";
+
+    /*
+     * 「空教室表网页」的通道。
+     * 指向的是同一份空闲教室总表的不同入口 —— 站点被限流、被墙或临时下线时，
+     * 用户可以换一条走，而不是整个功能失效。
+     *
+     * 这里每一条都实测过 HTTP 200 才放进来：
+     *   WEB_SITE  自建 Cloudflare Pages 站点（数据源就是本项目）
+     *   WEB_MIRROR 上游参考项目 TsiaohanWang/neuq-classroom-query 的 Pages 站点
+     *   WEB_REPO  上游网页版源码仓库（站点全挂时，可自行 clone 部署）
+     */
     private static final String WEB_SITE = "https://neuq-classroom-query-2kb.pages.dev";
+    private static final String WEB_MIRROR = "https://tsiaohanwang.github.io/neuq-classroom-query";
     private static final String WEB_REPO = "https://github.com/wanYuea/neuq-classroom-query";
 
     /** 用系统浏览器打开外部链接（App 内不内嵌浏览，避免和教务 WebView 抢会话） */
@@ -1118,8 +1130,9 @@ public class MainActivity extends Activity {
         });
         morePage.findViewById(R.id.rowImport).setOnClickListener(v -> startScheduleImport());
         morePage.findViewById(R.id.rowCache).setOnClickListener(v -> showCacheManager());
-        morePage.findViewById(R.id.rowWebSite).setOnClickListener(v -> openUrl(WEB_SITE));
-        morePage.findViewById(R.id.rowWebRepo).setOnClickListener(v -> openUrl(WEB_REPO));
+        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openUrl(WEB_SITE));
+        morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openUrl(WEB_MIRROR));
+        morePage.findViewById(R.id.rowChannel3).setOnClickListener(v -> openUrl(WEB_REPO));
         morePage.findViewById(R.id.rowAppRepo).setOnClickListener(v -> openUrl(APP_REPO));
         morePage.findViewById(R.id.rowCopyDiag).setOnClickListener(v -> copyDiag());
         morePage.findViewById(R.id.rowHowto).setOnClickListener(v -> showHowto());
@@ -1279,7 +1292,7 @@ public class MainActivity extends Activity {
             // 取不到就留空
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("东秦空教室 诊断信息\n");
+        sb.append("东秦课表 诊断信息\n");
         sb.append("版本：").append(ver.isEmpty() ? "-" : ver).append("\n");
         sb.append("Android：").append(android.os.Build.VERSION.RELEASE)
                 .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n");

@@ -148,13 +148,15 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- ══════════ 数据来源 ══════════ -->
+        <!-- ══════════ 空教室表网页 ══════════
+             多个通道指向同一份空闲教室总表：万一某个站点被墙、被限流或临时下线，
+             用户还能走另一条。每行左侧标出「通道N」，行内直接显示完整链接， -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:layout_marginBottom="6dp"
-            android:text="数据来源"
+            android:text="空教室表网页"
             android:textSize="12sp"
             android:textColor="#8b92a3"
             android:textStyle="bold" />
@@ -166,8 +168,23 @@
             android:background="@drawable/card_bg"
             android:layout_marginBottom="10dp">
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="11dp"
+                android:paddingBottom="11dp"
+                android:text="用手机浏览器打开网页版，查看全校空闲教室总表（每小时自动更新）。点击任一行即可跳转。"
+                android:textSize="11.5sp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="#9aa2b4" />
+
+            <View style="@style/MoreDivider" />
+
+            <!-- 通道 1：自建站点，国内访问通常最稳 -->
             <LinearLayout
-                android:id="@+id/rowWebSite"
+                android:id="@+id/rowChannel1"
                 style="@style/MoreRow">
 
                 <LinearLayout
@@ -178,24 +195,25 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="东秦空教室总表" />
-
-                    <TextView
-                        style="@style/MoreRowSub"
-                        android:text="网页版空闲教室总表，每小时自动更新" />
+                        android:text="空闲教室总表（本站）" />
 
                     <TextView
                         style="@style/MoreRowLink"
                         android:text="neuq-classroom-query-2kb.pages.dev" />
                 </LinearLayout>
 
+                <TextView
+                    style="@style/MoreChannel"
+                    android:text="通道1" />
+
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>
 
             <View style="@style/MoreDivider" />
 
+            <!-- 通道 2：上游仓库的网页版入口 -->
             <LinearLayout
-                android:id="@+id/rowWebRepo"
+                android:id="@+id/rowChannel2"
                 style="@style/MoreRow">
 
                 <LinearLayout
@@ -206,12 +224,45 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="总表项目" />
+                        android:text="空闲教室总表（镜像站）" />
+
+                    <TextView
+                        style="@style/MoreRowLink"
+                        android:text="tsiaohanwang.github.io/neuq-classroom-query" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/MoreChannel"
+                    android:text="通道2" />
+
+                <TextView style="@style/MoreArrow" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <!-- 通道 3：仓库源码，网页挂了也能自己部署一份 -->
+            <LinearLayout
+                android:id="@+id/rowChannel3"
+                style="@style/MoreRow">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/MoreRowTitle"
+                        android:text="网页版源码仓库" />
 
                     <TextView
                         style="@style/MoreRowLink"
                         android:text="github.com/wanYuea/neuq-classroom-query" />
                 </LinearLayout>
+
+                <TextView
+                    style="@style/MoreChannel"
+                    android:text="通道3" />
 
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>
@@ -254,7 +305,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="东秦空教室 · 安卓 App"
+                    android:text="东秦课表 · 安卓 App"
                     android:textSize="15sp"
                     android:textStyle="bold"
                     android:textColor="#222222" />
@@ -274,7 +325,7 @@
                     android:layout_marginTop="10dp"
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
-                    android:text="东北大学秦皇岛分校空闲教室与课表速查工具。内置浏览器打开学校教务系统，登录一次后即可查询；所有数据都在你的手机本地读取和缓存，不经过任何第三方服务器。"
+                    android:text="东北大学秦皇岛分校课表与空闲教室速查工具。内置浏览器打开学校教务系统，登录一次后即可导入课表、查询空教室；所有数据都在你的手机本地读取和缓存，不经过任何第三方服务器。"
                     android:textSize="12sp"
                     android:lineSpacingExtra="3dp"
                     android:textColor="#6c7686" />

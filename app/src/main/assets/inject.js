@@ -1,4 +1,4 @@
-/* 东秦空教室速查 · Android WebView 注入脚本
+/* 东秦课表 · Android WebView 注入脚本
  * 运行于教务系统页面上下文（同源，可读取教务数据）
  * 结果通过 window.Android.onResult(json) 回传给 App
  *
