@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 右侧「›」箭头：用矢量代替文本字符，避免不同字体下粗细/基线漂移 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#C3CAD9"
+        android:pathData="M9.29,6.71a1,1 0 0 0 0,1.41L13.17,12l-3.88,3.88a1,1 0 1 0 1.42,1.41l4.58,-4.58a1,1 0 0 0 0,-1.42l-4.58,-4.58a1,1 0 0 0 -1.42,0z" />
+</vector>

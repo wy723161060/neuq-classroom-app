@@ -4,4 +4,95 @@
         <item name="android:statusBarColor">#ffffff</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!--
+      「更多」页的行样式。
+      抽成 style 而不是在每行重复一遍属性：这一页有 9 行，
+      行高/内边距改一次就要改 9 处，很容易改漏导致行高不齐。
+    -->
+
+    <!-- 行容器：横向排列 + 点击水波纹（selectableItemBackground 自带反馈） -->
+    <style name="MoreRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">13dp</item>
+        <item name="android:paddingBottom">13dp</item>
+        <item name="android:background">?android:attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <!-- 行主标题 -->
+    <style name="MoreRowTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#222222</item>
+    </style>
+
+    <!-- 行副标题（说明文字） -->
+    <style name="MoreRowSub">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:textColor">#9aa2b4</item>
+    </style>
+
+    <!-- 行内链接文字（URL） -->
+    <style name="MoreRowLink">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:textColor">#7b8aa3</item>
+    </style>
+
+    <!-- 蓝色徽标 -->
+    <style name="MoreBadge">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:background">@drawable/badge_blue</item>
+    </style>
+
+    <!-- 灰色徽标（次要状态，如「已有课表」） -->
+    <style name="MoreBadgeGrey">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">#7b8494</item>
+        <item name="android:background">@drawable/badge_grey</item>
+    </style>
+
+    <!-- 行右侧箭头 -->
+    <style name="MoreArrow">
+        <item name="android:layout_width">16dp</item>
+        <item name="android:layout_height">16dp</item>
+        <item name="android:background">@drawable/ic_more_arrow</item>
+    </style>
+
+    <!-- 行与行之间的分隔线（左右缩进 14dp，贴齐文字） -->
+    <style name="MoreDivider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">14dp</item>
+        <item name="android:background">#F2F3F6</item>
+    </style>
 </resources>

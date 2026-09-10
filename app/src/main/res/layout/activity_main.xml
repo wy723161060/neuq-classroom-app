@@ -95,6 +95,18 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone" />
+
+        <!--
+          「更多」页：原生布局而不是 WebView。
+          设置类页面元素固定、不涉及动态排版，原生控件点击反馈和行高都更自然，
+          也省掉一层 HTML 生成与 CSS 维护。
+        -->
+        <include
+            android:id="@+id/morePage"
+            layout="@layout/page_more"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
     </FrameLayout>
 
     <LinearLayout
