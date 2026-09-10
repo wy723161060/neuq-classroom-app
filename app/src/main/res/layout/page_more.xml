@@ -175,7 +175,7 @@
                 android:paddingEnd="14dp"
                 android:paddingTop="11dp"
                 android:paddingBottom="11dp"
-                android:text="用手机浏览器打开网页版，查看全校空闲教室总表（每小时自动更新）。点击任一行即可跳转。"
+                android:text="在应用内打开网页版，查看全校空闲教室总表（每小时自动更新）。点击任一行即可打开。"
                 android:textSize="11.5sp"
                 android:lineSpacingExtra="2dp"
                 android:textColor="#9aa2b4" />
@@ -195,7 +195,7 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="空闲教室总表（本站）" />
+                        android:text="空闲教室总表（Pages）" />
 
                     <TextView
                         style="@style/MoreRowLink"
@@ -224,11 +224,11 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="空闲教室总表（镜像站）" />
+                        android:text="空闲教室总表（tsiao.io）" />
 
                     <TextView
                         style="@style/MoreRowLink"
-                        android:text="tsiaohanwang.github.io/neuq-classroom-query" />
+                        android:text="neuq.tsiao.io" />
                 </LinearLayout>
 
                 <TextView

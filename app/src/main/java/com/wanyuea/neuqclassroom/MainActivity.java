@@ -65,9 +65,8 @@ public class MainActivity extends Activity {
     private ImageButton btnWebOpenOuter;
     private TextView statusText;
     private ProgressBar progressBar;
-    private ImageButton btnQuery;
-    private ImageButton btnBack;
     private ImageButton btnRefreshData;
+    private ImageButton btnImportTop;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String injectJs = "";
     private String css = "";
@@ -121,6 +120,14 @@ public class MainActivity extends Activity {
     private String pendingTermName = "";
     private boolean pendingSingle = false;  // 等待单时段查询（课表 → 空教室）
     /**
+     * 等登录完成后弹「查询范围」。
+     *
+     * 空教室页点刷新/查询时如果还没登录，应该先让用户登，**登完再问范围**。
+     * 早先是 showLogin() 紧跟着 askDays()，结果对话框直接糊在 WebVPN 登录页上，
+     * 用户还没登录就被问「查几天」。
+     */
+    private boolean pendingAskRange = false;
+    /**
      * 本次 pending 操作是否已经提示过「请先登录」。
      * 被重定向到登录页时 pending 标记会保留（等登录完自动续跑），
      * 登录页可能连续加载几个 URL，没有这个标记会反复弹 Toast。
@@ -148,9 +155,8 @@ public class MainActivity extends Activity {
         resultView = findViewById(R.id.resultView);
         statusText = findViewById(R.id.statusText);
         progressBar = findViewById(R.id.progressBar);
-        btnQuery = findViewById(R.id.btnQuery);
-        btnBack = findViewById(R.id.btnBack);
         btnRefreshData = findViewById(R.id.btnRefreshData);
+        btnImportTop = findViewById(R.id.btnImportTop);
         tabClassroom = findViewById(R.id.tabClassroom);
         tabSchedule = findViewById(R.id.tabSchedule);
         tabMore = findViewById(R.id.tabMore);
@@ -179,19 +185,11 @@ public class MainActivity extends Activity {
         cm.setAcceptThirdPartyCookies(webView, true);
         cm.flush();
 
-        // 刷新按钮按「当前在哪个 Tab」分流：
-        //   更多页 → 登录后直接导入课表（顶栏那个位置在课表页已经不再出现）
-        //   其余   → 空教室页重查
-        btnQuery.setOnClickListener(v -> askDays());
-        btnBack.setOnClickListener(v -> showLogin());
-        btnRefreshData.setOnClickListener(v -> {
-            if (currentTab == TAB_MORE) {
-                startScheduleImport();
-            } else {
-                showLogin();
-                askDays();
-            }
-        });
+        // 空教室页顶栏的两个动作：
+        //   刷新 —— 重新查询空闲教室（未登录会先走登录，登录后再让选范围）
+        //   导入 —— 从教务导入课表
+        btnRefreshData.setOnClickListener(v -> refreshRooms());
+        btnImportTop.setOnClickListener(v -> startScheduleImport());
         tabClassroom.setOnClickListener(v -> switchTab(TAB_CLASSROOM));
         tabSchedule.setOnClickListener(v -> switchTab(TAB_SCHEDULE));
         tabMore.setOnClickListener(v -> switchTab(TAB_MORE));
@@ -204,7 +202,8 @@ public class MainActivity extends Activity {
                     // 页面已就绪，把会话 Cookie 落盘
                     CookieManager.getInstance().flush();
                 }
-                if (!(pendingQuery || pendingTerms || pendingSchedule || pendingSingle)) return;
+                if (!(pendingQuery || pendingTerms || pendingSchedule || pendingSingle
+                        || pendingAskRange)) return;
                 // 被重定向到登录页（还没登录 / 会话过期）：
                 // 关键点是**不清 pending 标记**。用户登完之后会回到教务页，
                 // 那时同一个 onPageFinished 会再跑一遍，URL 落在 /eams/ 上，
@@ -216,9 +215,13 @@ public class MainActivity extends Activity {
                     setBusy(false);
                     if (!loginHintShown) {
                         loginHintShown = true;
-                        statusText.setText("请先登录教务系统，登录后会自动继续");
-                        Toast.makeText(MainActivity.this,
-                                "请登录教务系统，登录后将自动继续", Toast.LENGTH_SHORT).show();
+                        // 空教室查询是「先登录再选范围」，提示要说清楚下一步是什么，
+                        // 否则用户登完不知道还要选一次范围
+                        String hint = pendingAskRange
+                                ? "请先登录教务，登录后选择查询范围"
+                                : "请先登录教务系统，登录后会自动继续";
+                        statusText.setText(hint);
+                        Toast.makeText(MainActivity.this, hint, Toast.LENGTH_SHORT).show();
                     } else {
                         statusText.setText("等待登录教务系统…");
                     }
@@ -226,6 +229,14 @@ public class MainActivity extends Activity {
                 }
                 // 已经站在教务页上：本次操作所需的会话就绪，复位提示状态
                 loginHintShown = false;
+                // 登录完成，轮到问查询范围了（用户要求范围选择必须在登录之后）
+                if (pendingAskRange) {
+                    pendingAskRange = false;
+                    setBusy(false);
+                    statusText.setText("已登录 · 请选择查询范围");
+                    askDays();
+                    return;
+                }
                 if (pendingTerms) {
                     pendingTerms = false;
                     setBusy(true);
@@ -428,27 +439,25 @@ public class MainActivity extends Activity {
         boolean room = (currentTab == TAB_CLASSROOM);
 
         // 各状态下的按钮可见性
-        boolean vQuery = false, vBack = false, vRefreshData = false;
+        boolean vRefreshData = false, vImport = false;
 
         switch (state) {
             case LOGIN:
-                // 正看着教务网页，按「从哪进来的」决定给什么按钮：
-                //   空教室页   → 查空教室
-                //   更多页     → 刷新（=登录完直接导入课表）
-                //   课表页     → 什么都不放（顶栏保持干净，导入走「更多」）
-                if (room) vQuery = true;
-                else if (currentTab == TAB_MORE) vRefreshData = true;
-                break;
             case ROOM_EMPTY:
-                vQuery = true;
-                break;
             case ROOM_DATA:
-                vRefreshData = true;
+            case BUSY:
+                // 空教室页：顶栏固定两个动作 —— 刷新空教室 + 导入课表。
+                // 四个状态下都给，是因为这页的内容可能还在加载 / 还没登录，
+                // 按钮忽隐忽现比一直放着更让人迷惑。
+                if (room) {
+                    vRefreshData = true;
+                    vImport = true;
+                }
                 break;
             case SCHEDULE_EMPTY:
             case SCHEDULE_DATA:
                 // 课表页顶栏不放业务按钮：导入走「更多 → 教务处登录」，
-                // 空课表页内另有引导入口，顶栏再放一个刷新只会重复
+                // 空课表页内另有引导入口，顶栏再放一个只会重复
                 break;
             case MORE:
                 // 更多页是设置列表，顶栏不放业务按钮，避免和页面内的按钮打架
@@ -456,20 +465,15 @@ public class MainActivity extends Activity {
             case WEB:
                 // 内嵌浏览器自带标题栏（返回 / 刷新 / 外开），顶栏再放按钮就重复了
                 break;
-            case BUSY:
-                // 查询中：空教室页保留按钮位置（禁用态），其余页面全部隐藏
-                if (room) vQuery = true;
-                break;
         }
 
-        btnQuery.setVisibility(vQuery ? View.VISIBLE : View.GONE);
-        btnBack.setVisibility(vBack ? View.VISIBLE : View.GONE);
         btnRefreshData.setVisibility(vRefreshData ? View.VISIBLE : View.GONE);
+        btnImportTop.setVisibility(vImport ? View.VISIBLE : View.GONE);
 
         // 忙碌时禁用可点的按钮，避免重复触发
         boolean busy = (state == UiState.BUSY);
-        btnQuery.setEnabled(!busy);
         btnRefreshData.setEnabled(!busy);
+        btnImportTop.setEnabled(!busy);
     }
 
     /**
@@ -625,8 +629,7 @@ public class MainActivity extends Activity {
                     if (termStartMs(sid) <= 0) {
                         askTermStart(sid, n);   // 首次导入该学期，问开学日期以推算周次
                     } else {
-                        renderSchedule();
-                        statusText.setText("课表已导入 · 共 " + n + " 门课");
+                        showScheduleAfterImport(n, null);
                     }
                 } catch (Exception e) {
                     statusText.setText("解析课表失败：" + e.getMessage());
@@ -690,11 +693,25 @@ public class MainActivity extends Activity {
         /** 空空教室页的引导：登录教务处并查询空教室 */
         @JavascriptInterface
         public void guideQueryRooms() {
-            mainHandler.post(() -> {
-                showLogin();   // 先切到教务 WebView，日期选择框浮在它上面
-                askDays();
-            });
+            mainHandler.post(MainActivity.this::beginRoomQueryWithLogin);
         }
+    }
+
+    /**
+     * 走「先登录、登录完成后再选查询范围」的空教室查询流程。
+     *
+     * 直接加载查询页来探会话：会话有效就停在 /eams/ 上，onPageFinished 里
+     * 看到 pendingAskRange 就弹范围选择；会话失效会被重定向到登录页，
+     * pending 标记保留，用户登完回到教务页时再接着弹。
+     */
+    private void beginRoomQueryWithLogin() {
+        pendingAskRange = true;
+        loginHintShown = false;
+        showContentView(loginView);
+        statusText.setText("请先登录教务，登录后选择查询范围");
+        setBusy(true);
+        progressBar.setProgress(0);
+        loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
     /* ---------- 生成表格 HTML（按楼层划分，对齐原项目） ---------- */
@@ -1221,16 +1238,15 @@ public class MainActivity extends Activity {
     private static final String APP_REPO = "https://github.com/wy723161060/neuq-classroom-app";
 
     /*
-     * 「空教室表网页」的通道。
-     * 指向的是同一份空闲教室总表的不同入口 —— 一个站点被限流或被墙时，
-     * 用户可以换另一条走，而不是整个功能失效。
+     * 「空教室表网页」的两个通道 —— 同一份空闲教室总表的不同入口，
+     * 一个站点被限流或被墙时可以换另一条走。
      *
-     * 每一条都实测过 HTTP 200 才放进来：
-     *   WEB_SITE   自建站点（数据源就是本项目）
-     *   WEB_MIRROR 上游参考项目 TsiaohanWang/neuq-classroom-query 的 Pages 站点
+     * 常量名直接带通道号，避免再出现「改对了链接、挂错了通道」——
+     * 上一版就因为常量叫 WEB_SITE/WEB_MIRROR，把 tsiao.io 挂到了通道1。
+     * 两条都实测过 HTTP 200 才写进来。
      */
-    private static final String WEB_SITE = "https://neuq.tsiao.io/";
-    private static final String WEB_MIRROR = "https://tsiaohanwang.github.io/neuq-classroom-query";
+    private static final String WEB_CH1 = "https://neuq-classroom-query-2kb.pages.dev";
+    private static final String WEB_CH2 = "https://neuq.tsiao.io/";
 
     /** 用系统浏览器打开外部链接（仓库页这类，不适合内嵌） */
     private void openUrl(String url) {
@@ -1281,8 +1297,8 @@ public class MainActivity extends Activity {
         });
         morePage.findViewById(R.id.rowImport).setOnClickListener(v -> startScheduleImport());
         morePage.findViewById(R.id.rowCache).setOnClickListener(v -> showCacheManager());
-        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openWebTable(WEB_SITE));
-        morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openWebTable(WEB_MIRROR));
+        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openWebTable(WEB_CH1));
+        morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openWebTable(WEB_CH2));
         morePage.findViewById(R.id.rowAppRepo).setOnClickListener(v -> openUrl(APP_REPO));
         morePage.findViewById(R.id.rowCopyDiag).setOnClickListener(v -> copyDiag());
         morePage.findViewById(R.id.rowHowto).setOnClickListener(v -> showHowto());
@@ -1715,6 +1731,7 @@ public class MainActivity extends Activity {
         // pending 标记现在会在登录跳转时保留（等登录完自动续跑），
         // 如果用户中途切走却不清掉，以后他自然浏览到教务页时会被旧标记触发一次查询。
         pendingQuery = pendingTerms = pendingSchedule = pendingSingle = false;
+        pendingAskRange = false;
         loginHintShown = false;
 
         // 启动时 currentTab 已是课表，此时点「课表」仍要重新渲染（可能刚导入完或日期已改）
@@ -1768,12 +1785,62 @@ public class MainActivity extends Activity {
     }
 
     private void startScheduleImport() {
+        // 必须先把教务 WebView 显示出来。
+        // 早先这里只 loadUrl 不切视图，从「空课表 → 登录教务处并导入课表」点进来时，
+        // 界面纹丝不动、只有一个 Toast 飘过 —— 表现就是「点了没反应」。
+        showContentView(loginView);
         statusText.setText("正在打开教务课表页…");
         setBusy(true);
         progressBar.setProgress(0);
         pendingTerms = true;
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         loginView.loadUrl(EAMS_BASE + "courseTableForStd.action");
+    }
+
+    /**
+     * 导入完成 → 切回课表 Tab 展示。
+     *
+     * 从「空教室」或「更多」发起的导入，内容落在课表页才合理。
+     * 早先只 renderSchedule() 不换 Tab，底部高亮还停在原来的 Tab 上，
+     * 内容和 Tab 对不上（比如停在「更多」却在显示课表）。
+     */
+    private void showScheduleAfterImport(int courseCount, String extra) {
+        if (currentTab != TAB_SCHEDULE) {
+            switchTab(TAB_SCHEDULE);   // 内部会 renderSchedule
+        } else {
+            renderSchedule();
+        }
+        statusText.setText("课表已导入 · 共 " + courseCount + " 门课"
+                + (extra == null ? "" : extra));
+    }
+
+    /**
+     * 空教室页顶栏的「刷新」：重新查询空闲教室。
+     *
+     * 分两种情况：
+     *  · 会话还有效 —— 直接问范围然后查
+     *  · 会话没了   —— 先跳登录页，**登录完成之后**再问范围
+     *    （用户明确要求：范围选择要放在登录之后，不能先把对话框糊在登录页上）
+     */
+    private void refreshRooms() {
+        if (isEamsLoaded()) {
+            showLogin();
+            askDays();
+        } else {
+            beginRoomQueryWithLogin();
+        }
+    }
+
+    /**
+     * 是否已经有教务会话可用。
+     *
+     * 判据是「loginView 当前停留的 URL 是否落在 /eams/ 上」——
+     * 被重定向到 CAS / WebVPN 登录页时 URL 不含 /eams/。
+     * 这只是个启发式判断，猜错了也只是多走一次登录跳转，不会出错。
+     */
+    private boolean isEamsLoaded() {
+        String u = loginView.getUrl();
+        return u != null && u.contains("/eams/");
     }
 
     /**
@@ -1896,14 +1963,11 @@ public class MainActivity extends Activity {
             c.set(Calendar.MILLISECOND, 0);
             saveTermStart(sid, mondayOf(c.getTimeInMillis()));
             dlg.dismiss();
-            renderSchedule();
-            statusText.setText("课表已导入 · 共 " + courseCount + " 门课");
+            showScheduleAfterImport(courseCount, null);
         });
         dlg.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(b -> {
             dlg.dismiss();
-            renderSchedule();
-            statusText.setText("课表已导入 · 共 " + courseCount
-                    + " 门课（点顶部「第 N 周」可设开学日期）");
+            showScheduleAfterImport(courseCount, "（点顶部「第 N 周」可设开学日期）");
         });
     }
 

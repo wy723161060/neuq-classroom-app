@@ -33,33 +33,11 @@
             android:maxLines="2"
             android:ellipsize="end" />
 
-        <!-- 返回教务（次要） -->
-        <ImageButton
-            android:id="@+id/btnBack"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/btn_flat_grey"
-            android:src="@drawable/ic_skeu_back"
-            android:scaleType="centerInside"
-            android:contentDescription="返回教务"
-            android:visibility="gone" />
-
-        <!-- 查空教室（主操作）：无底色纯图标，和刷新同一套观感 -->
-        <ImageButton
-            android:id="@+id/btnQuery"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/btn_icon_flat"
-            android:src="@drawable/ic_skeu_search"
-            android:scaleType="centerInside"
-            android:contentDescription="查空教室" />
-
         <!--
-          刷新（主操作）：空教室页刷新数据用。
-          课表页顶栏已不放刷新按钮（导入入口在「更多 → 教务处登录」，
-          空课表页内有引导入口），所以这个按钮现在只在空教室页出现。
+          空教室页顶栏的两个动作（用户要求放在空教室表上方）：
+            刷新 —— 重新查询空闲教室（没登录会先引导登录）
+            导入 —— 从教务导入课表
+          都是无底色纯图标，和整体顶栏观感一致。
         -->
         <ImageButton
             android:id="@+id/btnRefreshData"
@@ -69,7 +47,18 @@
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_refresh"
             android:scaleType="centerInside"
-            android:contentDescription="刷新"
+            android:contentDescription="刷新空教室"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btnImportTop"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_icon_flat"
+            android:src="@drawable/ic_skeu_import"
+            android:scaleType="centerInside"
+            android:contentDescription="导入课表"
             android:visibility="gone" />
     </LinearLayout>
 
