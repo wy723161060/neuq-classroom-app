@@ -61,7 +61,7 @@ App 内置 WebView 打开学校教务系统，你登录一次后会话保留在 
 
 ## 安装
 
-从 [Releases](https://github.com/wanYuea/neuq-classroom-app/releases/latest) 下载 `东秦空教室.apk` 安装即可。
+从 [Releases](https://github.com/wanYuea/neuq-classroom-app/releases/latest) 下载 APK（`neuq-classroom-v版本号.apk`）安装即可。
 
 - 需 Android 8.0（API 26）及以上
 - 安装时如提示「未知来源」，按系统引导放行
