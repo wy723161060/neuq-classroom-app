@@ -237,35 +237,6 @@
 
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>
-
-            <View style="@style/MoreDivider" />
-
-            <!-- 通道 3：仓库源码，网页挂了也能自己部署一份 -->
-            <LinearLayout
-                android:id="@+id/rowChannel3"
-                style="@style/MoreRow">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        style="@style/MoreRowTitle"
-                        android:text="网页版源码仓库" />
-
-                    <TextView
-                        style="@style/MoreRowLink"
-                        android:text="github.com/wanYuea/neuq-classroom-query" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/MoreChannel"
-                    android:text="通道3" />
-
-                <TextView style="@style/MoreArrow" />
-            </LinearLayout>
         </LinearLayout>
 
         <!-- ══════════ 关于 ══════════ -->

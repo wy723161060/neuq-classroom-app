@@ -3,6 +3,7 @@ package com.wanyuea.neuqclassroom;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -10,7 +11,11 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -51,6 +56,13 @@ public class MainActivity extends Activity {
 
     private WebView loginView;
     private WebView resultView;
+    private WebView webView;          // 内嵌浏览器：空闲教室总表网页
+    private LinearLayout webPage;     // 内嵌浏览器整块（标题栏 + 进度条 + WebView）
+    private TextView webUrlText;
+    private ProgressBar webProgress;
+    private ImageButton btnWebBack;
+    private ImageButton btnWebReload;
+    private ImageButton btnWebOpenOuter;
     private TextView statusText;
     private ProgressBar progressBar;
     private ImageButton btnQuery;
@@ -94,6 +106,7 @@ public class MainActivity extends Activity {
         SCHEDULE_EMPTY, // 课表页，还没导入 → 刷新（去登录/导入）
         SCHEDULE_DATA,  // 课表页，有课表 → 刷新（重新导入）
         MORE,           // 更多页（设置类，顶栏不放业务按钮）
+        WEB,            // 内嵌浏览器打开总表网页
         BUSY            // 任意页面正在查询/抓取
     }
     private UiState uiState = UiState.SCHEDULE_EMPTY;
@@ -107,6 +120,12 @@ public class MainActivity extends Activity {
     private String pendingSemesterId = "";
     private String pendingTermName = "";
     private boolean pendingSingle = false;  // 等待单时段查询（课表 → 空教室）
+    /**
+     * 本次 pending 操作是否已经提示过「请先登录」。
+     * 被重定向到登录页时 pending 标记会保留（等登录完自动续跑），
+     * 登录页可能连续加载几个 URL，没有这个标记会反复弹 Toast。
+     */
+    private boolean loginHintShown = false;
     private String singleDate = "";
     private String singleLabel = "";
     private int singleTb = 1;
@@ -150,27 +169,27 @@ public class MainActivity extends Activity {
         setupWebView(resultView);
         resultView.addJavascriptInterface(new Bridge(), "AndroidResultHost");
         setupMorePage();
+        setupWebBrowser();
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(loginView, true);
         // 持久化 Cookie（含 WebVPN / CAS 会话票据），下次启动仍是登录态
         cm.setAcceptThirdPartyCookies(resultView, true);
+        cm.setAcceptThirdPartyCookies(webView, true);
         cm.flush();
 
-        btnQuery.setOnClickListener(v -> {
-            // 顶栏「查空教室」只在空教室页出现；课表页那个位置是刷新
-            if (currentTab == TAB_CLASSROOM) askDays();
-            else startScheduleImport();
-        });
+        // 刷新按钮按「当前在哪个 Tab」分流：
+        //   更多页 → 登录后直接导入课表（顶栏那个位置在课表页已经不再出现）
+        //   其余   → 空教室页重查
+        btnQuery.setOnClickListener(v -> askDays());
         btnBack.setOnClickListener(v -> showLogin());
-        // 刷新：空教室页重查空教室；课表页重新导入课表
         btnRefreshData.setOnClickListener(v -> {
-            if (currentTab == TAB_CLASSROOM) {
+            if (currentTab == TAB_MORE) {
+                startScheduleImport();
+            } else {
                 showLogin();
                 askDays();
-            } else {
-                startScheduleImport();
             }
         });
         tabClassroom.setOnClickListener(v -> switchTab(TAB_CLASSROOM));
@@ -186,15 +205,27 @@ public class MainActivity extends Activity {
                     CookieManager.getInstance().flush();
                 }
                 if (!(pendingQuery || pendingTerms || pendingSchedule || pendingSingle)) return;
-                // 若被重定向到登录页（会话过期），不要注入，留在页面让用户登录
+                // 被重定向到登录页（还没登录 / 会话过期）：
+                // 关键点是**不清 pending 标记**。用户登完之后会回到教务页，
+                // 那时同一个 onPageFinished 会再跑一遍，URL 落在 /eams/ 上，
+                // 流程自己就接着往下走了 —— 用户不需要再点第二次。
+                // 早先这里是清空标记 + 报「会话已过期」，用户登完发现什么都没发生，
+                // 从表现上看就是「点了没反应」。
                 if (url == null || url.indexOf("/eams/") < 0) {
-                    pendingQuery = pendingTerms = pendingSchedule = pendingSingle = false;
                     progressBar.setVisibility(View.GONE);
                     setBusy(false);
-                    statusText.setText("会话已过期，请先登录教务再操作");
-                    Toast.makeText(MainActivity.this, "请先登录教务系统", Toast.LENGTH_SHORT).show();
+                    if (!loginHintShown) {
+                        loginHintShown = true;
+                        statusText.setText("请先登录教务系统，登录后会自动继续");
+                        Toast.makeText(MainActivity.this,
+                                "请登录教务系统，登录后将自动继续", Toast.LENGTH_SHORT).show();
+                    } else {
+                        statusText.setText("等待登录教务系统…");
+                    }
                     return;
                 }
+                // 已经站在教务页上：本次操作所需的会话就绪，复位提示状态
+                loginHintShown = false;
                 if (pendingTerms) {
                     pendingTerms = false;
                     setBusy(true);
@@ -300,6 +331,59 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 内嵌浏览器的装配与交互（只调一次，在 onCreate 里） */
+    private void setupWebBrowser() {
+        webPage = findViewById(R.id.webPage);
+        webView = findViewById(R.id.webView);
+        webUrlText = findViewById(R.id.webUrlText);
+        webProgress = findViewById(R.id.webProgress);
+        btnWebBack = findViewById(R.id.btnWebBack);
+        btnWebReload = findViewById(R.id.btnWebReload);
+        btnWebOpenOuter = findViewById(R.id.btnWebOpenOuter);
+
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                webProgress.setProgress(newProgress);
+                webProgress.setVisibility(newProgress < 100 ? View.VISIBLE : View.GONE);
+            }
+        });
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if (url != null) webUrlText.setText(prettyHost(url));
+            }
+        });
+
+        // 返回：网页里还有上一页就退网页，到底了才回「更多」
+        btnWebBack.setOnClickListener(v -> hideWebBrowser());
+        btnWebReload.setOnClickListener(v -> webView.reload());
+        btnWebOpenOuter.setOnClickListener(v -> {
+            String u = webView.getUrl();
+            if (u != null) openUrl(u);
+        });
+    }
+
+    /** 关掉内嵌浏览器，回到「更多」页 */
+    private void hideWebBrowser() {
+        if (webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        webView.stopLoading();
+        webPage.setVisibility(View.GONE);
+        morePage.setVisibility(View.VISIBLE);
+        showMore();
+    }
+
     private void askDays() {
         // 起始日 → 连续天数。选「明天」就是明天起连着 7 天，
         // 因为教务接口只支持「某天 + 连续 N 天」，不能直接跳着查本周剩余几天。
@@ -329,6 +413,7 @@ public class MainActivity extends Activity {
         // 先加载教务的空闲教室查询页（与浏览器操作一致，确保会话上下文正确），
         // 页面加载完成后在 onPageFinished 里注入脚本抓取
         pendingQuery = true;
+        loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
@@ -347,8 +432,12 @@ public class MainActivity extends Activity {
 
         switch (state) {
             case LOGIN:
-                // 正看着教务网页：空教室页给「查空教室」，课表页给「刷新」（=重新导入）
-                if (room) vQuery = true; else vRefreshData = true;
+                // 正看着教务网页，按「从哪进来的」决定给什么按钮：
+                //   空教室页   → 查空教室
+                //   更多页     → 刷新（=登录完直接导入课表）
+                //   课表页     → 什么都不放（顶栏保持干净，导入走「更多」）
+                if (room) vQuery = true;
+                else if (currentTab == TAB_MORE) vRefreshData = true;
                 break;
             case ROOM_EMPTY:
                 vQuery = true;
@@ -358,11 +447,14 @@ public class MainActivity extends Activity {
                 break;
             case SCHEDULE_EMPTY:
             case SCHEDULE_DATA:
-                // 导入课表的入口已挪到「更多 → 教务处登录」，顶栏只留一个刷新
-                vRefreshData = true;
+                // 课表页顶栏不放业务按钮：导入走「更多 → 教务处登录」，
+                // 空课表页内另有引导入口，顶栏再放一个刷新只会重复
                 break;
             case MORE:
                 // 更多页是设置列表，顶栏不放业务按钮，避免和页面内的按钮打架
+                break;
+            case WEB:
+                // 内嵌浏览器自带标题栏（返回 / 刷新 / 外开），顶栏再放按钮就重复了
                 break;
             case BUSY:
                 // 查询中：空教室页保留按钮位置（禁用态），其余页面全部隐藏
@@ -380,9 +472,21 @@ public class MainActivity extends Activity {
         btnRefreshData.setEnabled(!busy);
     }
 
+    /**
+     * 四个内容视图（教务 WebView / 结果 WebView / 更多页 / 内嵌浏览器）互斥显示。
+     *
+     * 之前是各处只把自己关心的那个 GONE 掉，结果「更多」页点教务处登录没反应 ——
+     * morePage 还盖在最上层。全部收敛到这一个方法，以后加视图也不会再漏。
+     */
+    private void showContentView(View target) {
+        View[] all = {loginView, resultView, morePage, webPage};
+        for (View v : all) {
+            if (v != null) v.setVisibility(v == target ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private void showLogin() {
-        resultView.setVisibility(View.GONE);
-        loginView.setVisibility(View.VISIBLE);
+        showContentView(loginView);
         statusText.setText("教务系统");
         applyUi(UiState.LOGIN);
     }
@@ -410,8 +514,7 @@ public class MainActivity extends Activity {
     }
 
     private void showHtml(String html) {
-        loginView.setVisibility(View.GONE);
-        resultView.setVisibility(View.VISIBLE);
+        showContentView(resultView);
         applyUi(UiState.ROOM_DATA);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -571,6 +674,26 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void thisWeek() {
             mainHandler.post(() -> resetWeek());
+        }
+
+        /* ---------- 空态页里的引导入口 ----------
+           课表 / 空教室都没有数据时，空态页会渲染一个按钮直接调这里。
+           走的是和「更多 → 教务处登录」完全相同的路径（打开教务 WebView），
+           所以用户不用先自己找到「更多」再去登录。 */
+
+        /** 空课表页的引导：登录教务处并导入课表 */
+        @JavascriptInterface
+        public void guideImportSchedule() {
+            mainHandler.post(() -> startScheduleImport());
+        }
+
+        /** 空空教室页的引导：登录教务处并查询空教室 */
+        @JavascriptInterface
+        public void guideQueryRooms() {
+            mainHandler.post(() -> {
+                showLogin();   // 先切到教务 WebView，日期选择框浮在它上面
+                askDays();
+            });
         }
     }
 
@@ -1099,25 +1222,53 @@ public class MainActivity extends Activity {
 
     /*
      * 「空教室表网页」的通道。
-     * 指向的是同一份空闲教室总表的不同入口 —— 站点被限流、被墙或临时下线时，
-     * 用户可以换一条走，而不是整个功能失效。
+     * 指向的是同一份空闲教室总表的不同入口 —— 一个站点被限流或被墙时，
+     * 用户可以换另一条走，而不是整个功能失效。
      *
-     * 这里每一条都实测过 HTTP 200 才放进来：
-     *   WEB_SITE  自建 Cloudflare Pages 站点（数据源就是本项目）
+     * 每一条都实测过 HTTP 200 才放进来：
+     *   WEB_SITE   自建站点（数据源就是本项目）
      *   WEB_MIRROR 上游参考项目 TsiaohanWang/neuq-classroom-query 的 Pages 站点
-     *   WEB_REPO  上游网页版源码仓库（站点全挂时，可自行 clone 部署）
      */
-    private static final String WEB_SITE = "https://neuq-classroom-query-2kb.pages.dev";
+    private static final String WEB_SITE = "https://neuq.tsiao.io/";
     private static final String WEB_MIRROR = "https://tsiaohanwang.github.io/neuq-classroom-query";
-    private static final String WEB_REPO = "https://github.com/wanYuea/neuq-classroom-query";
 
-    /** 用系统浏览器打开外部链接（App 内不内嵌浏览，避免和教务 WebView 抢会话） */
+    /** 用系统浏览器打开外部链接（仓库页这类，不适合内嵌） */
     private void openUrl(String url) {
         try {
             startActivity(new android.content.Intent(
                     android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
         } catch (Exception e) {
             Toast.makeText(this, "没有可用的浏览器", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 在 App 内打开空闲教室总表网页。
+     *
+     * 走独立的 webView（不是教务那两个）：总表和教务是两套站点，
+     * 共用 WebView 会把总表页面留成下一个用户的「上一次浏览会话」，
+     * 也会让返回键的语义变得含糊（到底是在退网页还是在退 App）。
+     */
+    private void openWebTable(String url) {
+        // 从「更多」进来的：当前 Tab 就是「更多」，高亮也要跟着落到它上面，
+        // 否则底部会停留在上一个 Tab，看起来像「更多」没被选中。
+        currentTab = TAB_MORE;
+        applyTabHighlight(TAB_MORE);
+        webView.loadUrl(url);
+        showContentView(webPage);
+        webUrlText.setText(prettyHost(url));
+        webProgress.setVisibility(View.VISIBLE);
+        webProgress.setProgress(0);
+        applyUi(UiState.WEB);
+    }
+
+    /** 只留主机名，长 URL 在窄屏上会把标题栏挤爆 */
+    private String prettyHost(String url) {
+        try {
+            String h = android.net.Uri.parse(url).getHost();
+            return h == null ? url : h;
+        } catch (Exception e) {
+            return url;
         }
     }
 
@@ -1130,9 +1281,8 @@ public class MainActivity extends Activity {
         });
         morePage.findViewById(R.id.rowImport).setOnClickListener(v -> startScheduleImport());
         morePage.findViewById(R.id.rowCache).setOnClickListener(v -> showCacheManager());
-        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openUrl(WEB_SITE));
-        morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openUrl(WEB_MIRROR));
-        morePage.findViewById(R.id.rowChannel3).setOnClickListener(v -> openUrl(WEB_REPO));
+        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openWebTable(WEB_SITE));
+        morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openWebTable(WEB_MIRROR));
         morePage.findViewById(R.id.rowAppRepo).setOnClickListener(v -> openUrl(APP_REPO));
         morePage.findViewById(R.id.rowCopyDiag).setOnClickListener(v -> copyDiag());
         morePage.findViewById(R.id.rowHowto).setOnClickListener(v -> showHowto());
@@ -1141,9 +1291,7 @@ public class MainActivity extends Activity {
     /** 切到「更多」页：刷新一遍其上的动态文案（版本号 / 缓存统计） */
     private void showMore() {
         refreshMorePage();
-        loginView.setVisibility(View.GONE);
-        resultView.setVisibility(View.GONE);
-        morePage.setVisibility(View.VISIBLE);
+        showContentView(morePage);
         applyUi(UiState.MORE);
         statusText.setText("更多");
     }
@@ -1210,32 +1358,120 @@ public class MainActivity extends Activity {
     /* ---------- 缓存管理弹窗 ---------- */
 
     /** 缓存管理：显示两项缓存的大小/时间，可分别清除 */
+    /**
+     * 缓存管理：底部卡片式抽屉。
+     *
+     * 每条缓存给出「体积 + 条数 + 抓取时间 + 占用比例条」，
+     * 清理按钮独立成行（原来是列表项，点一下就清，容易误触）。
+     *
+     * 用系统 Dialog 而不是 BottomSheetDialog：本项目零第三方依赖
+     * （见 app/build.gradle 末尾），为一个抽屉引入 material 库不划算。
+     */
     private void showCacheManager() {
-        long schedSize = cacheFileSize("schedule.json");
-        long roomSize = cacheFileSize("cache.json");
-        java.util.List<String> labels = new java.util.ArrayList<>();
-        java.util.List<Integer> kinds = new java.util.ArrayList<>();
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_cache, null);
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(sheet);
+        Window win = dialog.getWindow();
+        if (win != null) {
+            // 贴底、通栏：抽屉的观感靠「从底部弹出」而不是库
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            win.setGravity(Gravity.BOTTOM);
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+        }
 
-        labels.add("课表缓存　" + (schedSize >= 0 ? sizeText(schedSize) : "无")
-                + "　" + ScheduleCache.ageText(this));
-        kinds.add(1);
-        labels.add("空教室缓存　" + (roomSize >= 0 ? sizeText(roomSize) : "无")
-                + "　" + (roomSize >= 0 ? ResultCache.ageText(this) : "未查询"));
-        kinds.add(2);
-        labels.add("全部清除（含开学日期设置）");
-        kinds.add(0);
+        fillCacheSheet(sheet);
 
-        final String[] arr = labels.toArray(new String[0]);
-        new AlertDialog.Builder(this)
-                .setTitle("缓存管理")
-                .setItems(arr, (d, which) -> {
-                    int kind = kinds.get(which);
-                    if (kind == 0) confirmClearAll();
-                    else if (kind == 1) clearScheduleCache();
-                    else clearRoomCache();
-                })
-                .setNegativeButton("关闭", null)
-                .show();
+        sheet.findViewById(R.id.cacheSchedClear).setOnClickListener(v -> {
+            clearScheduleCache();
+            fillCacheSheet(sheet);
+        });
+        sheet.findViewById(R.id.cacheRoomClear).setOnClickListener(v -> {
+            clearRoomCache();
+            fillCacheSheet(sheet);
+        });
+        sheet.findViewById(R.id.cacheClearAll).setOnClickListener(v -> {
+            confirmClearAll();
+            fillCacheSheet(sheet);
+        });
+
+        dialog.show();
+    }
+
+    /** 把当前缓存状态刷到抽屉上（清理后原地刷新，不用关了再开） */
+    private void fillCacheSheet(View sheet) {
+        long schedSize = Math.max(cacheFileSize("schedule.json"), 0);
+        long roomSize = Math.max(cacheFileSize("cache.json"), 0);
+        long total = schedSize + roomSize;
+
+        ((TextView) sheet.findViewById(R.id.cacheTotal))
+                .setText("共占用 " + sizeText(total));
+        int items = (schedSize > 0 ? 1 : 0) + (roomSize > 0 ? 1 : 0);
+        ((TextView) sheet.findViewById(R.id.cacheTotalSub))
+                .setText(items + " 项有缓存");
+
+        // 课表
+        boolean hasSched = schedSize > 0;
+        ((TextView) sheet.findViewById(R.id.cacheSchedSize))
+                .setText(hasSched ? sizeText(schedSize) : "无");
+        ((TextView) sheet.findViewById(R.id.cacheSchedMeta)).setText(hasSched
+                ? ScheduleCache.ageText(this) + " · " + scheduleCourseCount() + " 门课"
+                : "还没有导入过课表");
+        ((ProgressBar) sheet.findViewById(R.id.cacheSchedBar))
+                .setProgress(percent(schedSize, total));
+        View schedClear = sheet.findViewById(R.id.cacheSchedClear);
+        schedClear.setEnabled(hasSched);
+        schedClear.setAlpha(hasSched ? 1f : 0.45f);
+
+        // 空教室
+        boolean hasRoom = roomSize > 0;
+        ((TextView) sheet.findViewById(R.id.cacheRoomSize))
+                .setText(hasRoom ? sizeText(roomSize) : "无");
+        ((TextView) sheet.findViewById(R.id.cacheRoomMeta)).setText(hasRoom
+                ? ResultCache.ageText(this) + " · " + roomEntryCount() + " 个楼层条目"
+                : "还没有查询过空教室");
+        ((ProgressBar) sheet.findViewById(R.id.cacheRoomBar))
+                .setProgress(percent(roomSize, total));
+        View roomClear = sheet.findViewById(R.id.cacheRoomClear);
+        roomClear.setEnabled(hasRoom);
+        roomClear.setAlpha(hasRoom ? 1f : 0.45f);
+    }
+
+    /** 占总量百分比，用于占用比例条 */
+    private int percent(long part, long total) {
+        return total <= 0 ? 0 : (int) Math.round(part * 100.0 / total);
+    }
+
+    /** 课表缓存里的课程数（读不出就返回 0） */
+    private int scheduleCourseCount() {
+        try {
+            String s = ScheduleCache.load(this);
+            if (s == null) return 0;
+            JSONArray c = new JSONObject(s).optJSONArray("courses");
+            return c == null ? 0 : c.length();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** 空教室缓存里的楼层条目数（读不出就返回 0） */
+    private int roomEntryCount() {
+        try {
+            String s = ResultCache.load(this);
+            if (s == null) return 0;
+            JSONObject o = new JSONObject(s);
+            JSONArray days = o.optJSONArray("days");
+            if (days == null) return 0;
+            int n = 0;
+            for (int i = 0; i < days.length(); i++) {
+                JSONArray b = days.getJSONObject(i).optJSONArray("buildings");
+                if (b != null) n += b.length();
+            }
+            return n;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private void confirmClearAll() {
@@ -1468,6 +1704,19 @@ public class MainActivity extends Activity {
     }
 
     private void switchTab(int tab) {
+        // 内嵌浏览器开着时点任意底部 Tab，都视为「离开浏览器」，
+        // 否则网页会继续盖在最上层，Tab 看起来怎么点都没反应。
+        if (webPage.getVisibility() == View.VISIBLE) {
+            webView.stopLoading();
+            webPage.setVisibility(View.GONE);
+        }
+
+        // 切 Tab 视为放弃这次待续的抓取。
+        // pending 标记现在会在登录跳转时保留（等登录完自动续跑），
+        // 如果用户中途切走却不清掉，以后他自然浏览到教务页时会被旧标记触发一次查询。
+        pendingQuery = pendingTerms = pendingSchedule = pendingSingle = false;
+        loginHintShown = false;
+
         // 启动时 currentTab 已是课表，此时点「课表」仍要重新渲染（可能刚导入完或日期已改）
         boolean sameTab = (currentTab == tab);
         currentTab = tab;
@@ -1501,7 +1750,9 @@ public class MainActivity extends Activity {
                     showLogin();
                 }
             } else {
-                showLogin();
+                // 没有缓存：给空态引导页，而不是直接把教务登录页糊上来 ——
+                // 后者会让人以为「这个页面就是教务系统」，找不到该点哪里
+                showEmptyRoom();
             }
         } else if (tab == TAB_MORE) {
             showMore();
@@ -1521,6 +1772,7 @@ public class MainActivity extends Activity {
         setBusy(true);
         progressBar.setProgress(0);
         pendingTerms = true;
+        loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         loginView.loadUrl(EAMS_BASE + "courseTableForStd.action");
     }
 
@@ -1712,8 +1964,7 @@ public class MainActivity extends Activity {
     }
 
     private void showScheduleHtml(String html) {
-        loginView.setVisibility(View.GONE);
-        resultView.setVisibility(View.VISIBLE);
+        showContentView(resultView);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
@@ -1723,8 +1974,35 @@ public class MainActivity extends Activity {
                 + "<style>" + scheduleCss + "</style></head><body>"
                 + "<h1>我的课表</h1>"
                 + "<div class=\"empty\"><b>还没有课表</b>"
-                + "去底部「更多 → 教务处登录」，登录后即可导入<br>导入一次即可长期离线查看</div>"
-                + "<p class=\"tip\">课表只从你本人已登录的教务会话读取，保存在手机本地，不会上传。</p>"
+                + "登录教务处后即可导入本学期课表<br>导入一次即可长期离线查看"
+                // 引导入口：直接在这里把「登录并导入」摆出来，
+                // 用户不用先自己摸到底部「更多」里去找
+                + "<button class=\"guide\" onclick=\"AndroidResultHost.guideImportSchedule()\">"
+                + "登录教务处并导入课表</button></div>"
+                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」进入。"
+                + "课表只从你本人已登录的教务会话读取，保存在手机本地，不会上传。</p>"
+                + "</body></html>";
+    }
+
+    /** 空教室空态：显示引导页（状态是 ROOM_EMPTY，顶栏给「查空教室」） */
+    private void showEmptyRoom() {
+        showContentView(resultView);
+        resultView.loadDataWithBaseURL(null, emptyRoomHtml(), "text/html", "UTF-8", null);
+        applyUi(UiState.ROOM_EMPTY);
+    }
+
+    /** 空教室页的空态：没有缓存时先给引导，而不是直接把教务登录页糊上来 */
+    private String emptyRoomHtml() {
+        return "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<style>" + css + "</style></head><body>"
+                + "<h1>空闲教室总表</h1>"
+                + "<div class=\"empty\"><b>还没有空教室数据</b>"
+                + "登录教务处后即可查询全校空闲教室<br>查一次会缓存到本机，之后离线也能翻看"
+                + "<button class=\"guide\" onclick=\"AndroidResultHost.guideQueryRooms()\">"
+                + "登录教务处并查询</button></div>"
+                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」进入。"
+                + "数据实时取自教务系统，不经过任何第三方服务器。</p>"
                 + "</body></html>";
     }
 
@@ -1912,6 +2190,7 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         pendingSingle = true;
+        loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         statusText.setText("正在查询 " + label + " 的空教室…");
         setBusy(true);
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
@@ -1936,6 +2215,7 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         pendingSingle = true;
+        loginHintShown = false;   // 新的一次操作，登录提示重新开始算
 
         statusText.setText("正在查询 " + qb + "-" + qe + " 节的空教室…");
         setBusy(true);
@@ -2033,6 +2313,11 @@ public class MainActivity extends Activity {
      */
     @Override
     public void onBackPressed() {
+        // 内嵌浏览器：优先退网页，退到底才回「更多」
+        if (webPage.getVisibility() == View.VISIBLE) {
+            hideWebBrowser();
+            return;
+        }
         if (loginView.getVisibility() == View.VISIBLE) {
             if (loginView.canGoBack()) {
                 loginView.goBack();

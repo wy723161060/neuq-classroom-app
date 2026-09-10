@@ -408,3 +408,36 @@ table.slot-table u {
   color: #999;
   text-align: center;
 }
+
+/* ============================================================
+   空态 / 引导（无缓存时的首屏）
+   ============================================================ */
+
+.empty {
+  margin: 0 0 10px; padding: 26px 18px; text-align: center;
+  background: var(--container-bg, #fff); border-radius: 10px;
+  color: var(--info-color, #8b92a3); font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+}
+.empty b { display: block; color: #55617a; font-size: 14px; margin-bottom: 6px; }
+
+/* 空态引导按钮：直接把「去登录并查询」摆出来，不用让用户自己找入口。
+   实心蓝 + 通栏，是空态里唯一的主行动，所以做得足够显眼。 */
+.guide {
+  display: block; width: 100%; margin: 16px 0 2px; padding: 11px 0;
+  border: 0; border-radius: 9px; background: #1B4D8F; color: #fff;
+  font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.guide:active { background: #163F76; }
+.guide.ghost {
+  background: transparent; color: #1B4D8F; border: 1px solid #C9D8EE;
+}
+.guide.ghost:active { background: #eef3fb; }
+
+.tip {
+  margin: 10px 0 0; padding: 9px 12px; border-radius: 9px;
+  font-size: 11.5px; color: #5b6478;
+  background: var(--container-bg, #fff); border: 1px solid #eef0f5;
+}
+.tip b { color: #1B4D8F; font-weight: 600; }

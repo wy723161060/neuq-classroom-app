@@ -45,27 +45,28 @@
             android:contentDescription="返回教务"
             android:visibility="gone" />
 
-        <!-- 查空教室（主操作） -->
+        <!-- 查空教室（主操作）：无底色纯图标，和刷新同一套观感 -->
         <ImageButton
             android:id="@+id/btnQuery"
             android:layout_width="38dp"
             android:layout_height="38dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/btn_flat_blue"
+            android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_search"
             android:scaleType="centerInside"
             android:contentDescription="查空教室" />
 
         <!--
-          刷新（主操作）：空教室页刷新数据、课表页重新导入课表共用这一个按钮。
-          以前课表页是「导入 / 重新导入」两个按钮，现在导入入口统一挪到「更多 → 教务处登录」。
+          刷新（主操作）：空教室页刷新数据用。
+          课表页顶栏已不放刷新按钮（导入入口在「更多 → 教务处登录」，
+          空课表页内有引导入口），所以这个按钮现在只在空教室页出现。
         -->
         <ImageButton
             android:id="@+id/btnRefreshData"
             android:layout_width="38dp"
             android:layout_height="38dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/btn_flat_blue"
+            android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_refresh"
             android:scaleType="centerInside"
             android:contentDescription="刷新"
@@ -107,6 +108,88 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone" />
+
+        <!--
+          内嵌浏览器页：用来打开空闲教室总表网页。
+          单独一个 WebView，不和教务那两个共用 —— 总表与教务是两套站点，
+          共用一个 WebView 会让「上一次浏览的页面」在两个用途间串味，
+          返回键该退网页还是退 App 也会变得说不清。
+          结构是「标题栏 + 进度条 + WebView」，所以整块用 LinearLayout 包住。
+        -->
+        <LinearLayout
+            android:id="@+id/webPage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="#ffffff"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/webBar"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="6dp"
+                android:paddingEnd="10dp"
+                android:background="#ffffff"
+                android:elevation="2dp">
+
+                <ImageButton
+                    android:id="@+id/btnWebBack"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="@drawable/btn_flat_grey"
+                    android:src="@drawable/ic_skeu_back"
+                    android:scaleType="centerInside"
+                    android:contentDescription="返回" />
+
+                <TextView
+                    android:id="@+id/webUrlText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:maxLines="1"
+                    android:ellipsize="middle"
+                    android:textSize="12.5sp"
+                    android:textColor="#6c7686"
+                    android:text="" />
+
+                <ImageButton
+                    android:id="@+id/btnWebReload"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="@drawable/btn_flat_blue"
+                    android:src="@drawable/ic_skeu_refresh"
+                    android:scaleType="centerInside"
+                    android:contentDescription="刷新网页" />
+
+                <ImageButton
+                    android:id="@+id/btnWebOpenOuter"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/btn_flat_grey"
+                    android:src="@drawable/ic_more_arrow"
+                    android:scaleType="centerInside"
+                    android:contentDescription="用外部浏览器打开" />
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/webProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="2.5dp"
+                android:max="100" />
+
+            <WebView
+                android:id="@+id/webView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+        </LinearLayout>
     </FrameLayout>
 
     <LinearLayout

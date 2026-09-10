@@ -139,4 +139,18 @@ td.cell.today .free-slot .plus { color: #a8c2e4; }
   font-size: 11.5px; color: #5b6478; background: #fff; border: 1px solid #eef0f5;
 }
 .tip b { color: #1B4D8F; font-weight: 600; }
+
+/* 空态引导按钮：直接把「去登录并导入」摆出来，不用让用户自己找入口。
+   实心蓝 + 通栏，是空态里唯一的主行动，所以做得足够显眼。 */
+.guide {
+  display: block; width: 100%; margin: 16px 0 2px; padding: 11px 0;
+  border: 0; border-radius: 9px; background: #1B4D8F; color: #fff;
+  font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.guide:active { background: #163F76; }
+.guide.ghost {
+  background: #fff; color: #1B4D8F; border: 1px solid #C9D8EE;
+}
+.guide.ghost:active { background: #eef3fb; }
 .foot { margin-top: 14px; font-size: 11px; color: #999; text-align: center; }

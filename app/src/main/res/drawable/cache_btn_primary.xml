@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 主行动按钮（全部清除）：实心蓝，和「更多」页的徽标同色系 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#33FFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1B4D8F" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</ripple>

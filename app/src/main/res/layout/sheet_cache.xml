@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  缓存管理 · 底部卡片式抽屉
+
+  从 AlertDialog 的纯文字列表改过来：原来只能看到「课表缓存 3.2 KB」这一行字，
+  用户没法判断「这条要不要清」——没有条数、没有时间、没有占用比例。
+  改成卡片后每条给出「体积 + 条数 + 抓取时间 + 进度条」，清理按钮独立成行，
+  误触成本也更高（原先是列表项，点一下就清）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="16dp">
+
+    <!-- 合计概览 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:paddingBottom="14dp">
+
+        <TextView
+            android:id="@+id/cacheTotal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="共占用 0 B"
+            android:textSize="21sp"
+            android:textStyle="bold"
+            android:textColor="#1B1F27" />
+
+        <TextView
+            android:id="@+id/cacheTotalSub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingBottom="3dp"
+            android:text="2 项"
+            android:textSize="12sp"
+            android:textColor="#9AA2B4" />
+    </LinearLayout>
+
+    <!-- ══════════ 课表缓存 ══════════ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/cache_card_bg"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="课表缓存"
+                android:textSize="14.5sp"
+                android:textStyle="bold"
+                android:textColor="#222222" />
+
+            <TextView
+                android:id="@+id/cacheSchedSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#1B4D8F" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/cacheSchedMeta"
+            style="@style/MoreRowSub"
+            android:layout_marginTop="4dp"
+            android:text="—" />
+
+        <ProgressBar
+            android:id="@+id/cacheSchedBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:layout_marginTop="10dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/cache_bar" />
+
+        <!-- 清理按钮独立成行：原来是列表项，点一下就清，容易误触 -->
+        <TextView
+            android:id="@+id/cacheSchedClear"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/cache_btn_danger"
+            android:gravity="center"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
+            android:text="清除课表缓存"
+            android:textSize="13sp"
+            android:textColor="#C0392B" />
+    </LinearLayout>
+
+    <!-- ══════════ 空教室缓存 ══════════ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/cache_card_bg"
+        android:layout_marginTop="10dp"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="空教室缓存"
+                android:textSize="14.5sp"
+                android:textStyle="bold"
+                android:textColor="#222222" />
+
+            <TextView
+                android:id="@+id/cacheRoomSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#1B4D8F" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/cacheRoomMeta"
+            style="@style/MoreRowSub"
+            android:layout_marginTop="4dp"
+            android:text="—" />
+
+        <ProgressBar
+            android:id="@+id/cacheRoomBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:layout_marginTop="10dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/cache_bar" />
+
+        <TextView
+            android:id="@+id/cacheRoomClear"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/cache_btn_danger"
+            android:gravity="center"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
+            android:text="清除空教室缓存"
+            android:textSize="13sp"
+            android:textColor="#C0392B" />
+    </LinearLayout>
+
+    <!-- 全部清除：主行动，放最下面一格 -->
+    <TextView
+        android:id="@+id/cacheClearAll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/cache_btn_primary"
+        android:gravity="center"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:text="全部清除"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:lineSpacingExtra="2dp"
+        android:text="全部清除会一并删除开学日期设置，需重新导入课表"
+        android:textSize="11sp"
+        android:textColor="#A8AFBD" />
+</LinearLayout>

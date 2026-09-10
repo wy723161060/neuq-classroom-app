@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无底色纯图标按钮（顶栏用）。
+
+  和 btn_flat_blue / btn_flat_grey 的区别：底板完全透明，只有按下时的一圈涟漪。
+  参考用户给的那张课程表截图 —— 顶部 + ↓ ↗ ⋮ 那一排就是这样：图标直接落在
+  标题栏上，没有圆角方块托底，视觉上更轻、也更贴「工具」的观感。
+  mask 决定涟漪的形状：用 oval 而不是矩形，点按时是一圈圆形扩散，不生硬。
+-->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#241B4D8F">
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+</ripple>
