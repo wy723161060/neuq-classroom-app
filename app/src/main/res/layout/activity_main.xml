@@ -6,7 +6,7 @@
     android:background="#f5f6f8">
 
     <!--
-      顶栏：左侧状态文字，右侧拟物化图标按钮。
+      顶栏：左侧状态文字，右侧扁平化图标按钮（与页面卡片同层级，无立体投影）。
       按钮显隐由 MainActivity.applyUi(UiState) 一处统一控制。
     -->
     <LinearLayout
@@ -36,10 +36,10 @@
         <!-- 返回教务（次要） -->
         <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/btn_skeu_grey"
+            android:background="@drawable/btn_flat_grey"
             android:src="@drawable/ic_skeu_back"
             android:scaleType="centerInside"
             android:contentDescription="返回教务"
@@ -48,48 +48,27 @@
         <!-- 查空教室（主操作） -->
         <ImageButton
             android:id="@+id/btnQuery"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/btn_skeu_blue"
+            android:background="@drawable/btn_flat_blue"
             android:src="@drawable/ic_skeu_search"
             android:scaleType="centerInside"
             android:contentDescription="查空教室" />
 
-        <!-- 刷新数据（主操作） -->
+        <!--
+          刷新（主操作）：空教室页刷新数据、课表页重新导入课表共用这一个按钮。
+          以前课表页是「导入 / 重新导入」两个按钮，现在导入入口统一挪到「更多 → 教务处登录」。
+        -->
         <ImageButton
             android:id="@+id/btnRefreshData"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/btn_skeu_blue"
+            android:background="@drawable/btn_flat_blue"
             android:src="@drawable/ic_skeu_refresh"
             android:scaleType="centerInside"
-            android:contentDescription="刷新数据"
-            android:visibility="gone" />
-
-        <!-- 导入课表（主操作） -->
-        <ImageButton
-            android:id="@+id/btnImport"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/btn_skeu_blue"
-            android:src="@drawable/ic_skeu_import"
-            android:scaleType="centerInside"
-            android:contentDescription="导入课表"
-            android:visibility="gone" />
-
-        <!-- 重新导入（次要） -->
-        <ImageButton
-            android:id="@+id/btnReimport"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/btn_skeu_grey"
-            android:src="@drawable/ic_skeu_import"
-            android:scaleType="centerInside"
-            android:contentDescription="重新导入课表"
+            android:contentDescription="刷新"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -172,6 +151,37 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="空教室"
+                android:textSize="13sp"
+                android:textColor="#9aa2b4" />
+        </LinearLayout>
+
+        <!--
+          更多：最右侧。课表 / 空教室之外的设置类功能都收在这里
+          （教务处登录、缓存管理、关于本应用…），以后加功能只往这一页塞，
+          不用再往顶栏堆按钮。
+        -->
+        <LinearLayout
+            android:id="@+id/tabMore"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground">
+
+            <View
+                android:id="@+id/indMore"
+                android:layout_width="26dp"
+                android:layout_height="3dp"
+                android:layout_marginBottom="5dp"
+                android:background="#1B4D8F"
+                android:visibility="invisible" />
+
+            <TextView
+                android:id="@+id/tvMore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="更多"
                 android:textSize="13sp"
                 android:textColor="#9aa2b4" />
         </LinearLayout>

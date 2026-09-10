@@ -62,11 +62,22 @@ App 内置 WebView 打开学校教务系统，你登录一次后会话保留在 
 
 （`⑨` 为该时段该层的空闲教室数量）
 
-底部两个 Tab，**打开 App 直接进课表**（课表是主页面）：
+### 界面结构（v3.1）
+
+底部三个 Tab，**打开 App 直接进课表**（课表是主页面）：
 
 - **课表** —— 主页。默认停在**本周**，周视图网格，点没课的格子即可查该时段的空闲教室
-- **空教室** —— 上面的总表。缓存里标出**今天**那一栏，过期会提示刷新；
+- **空教室** —— 楼栋 × 时段总表。缓存里标出**今天**那一栏，过期会提示刷新；
   点入后按返回键回到课表，而不是直接退出
+- **更多** —— 设置类功能都收在这里，以后加功能往这页塞即可：
+  - **教务处登录** —— 打开教务系统登录统一身份认证
+  - **导入课表** —— 选学期从教务抓取（导入入口在这里，不在课表顶栏）
+  - **缓存管理** —— 课表 / 空教室缓存的大小与时间，可分别清除或全部清除
+  - **关于本应用** —— 版本、项目主页、复制诊断信息、使用说明
+
+> 课表顶栏曾经有「导入课表 / 重新导入」两个按钮，v3.1 起**收敛为一个扁平化刷新按钮**
+> （和空教室页的刷新一致），导入入口统一挪到「更多 → 教务处登录」。
+> 顶栏按钮显隐仍由 `applyUi(UiState)` 一处决定。
 
 > 「翻到第 N 周」是临时查看行为，不写盘 —— 每次重开 App 都回到本周；
 > 空教室同理，缓存不是当天抓的会明确提示「这是 X 月 X 日的数据」，不会让你误当成今天。
@@ -150,11 +161,15 @@ export NCQ_KEY_PASS=你的私钥口令
 
 | 路径 | 说明 |
 |---|---|
-| `app/src/main/java/.../MainActivity.java` | 双 WebView、脚本注入、表格 HTML 生成 |
-| `app/src/main/java/.../ResultCache.java` | 本地缓存：读写、7 天过期判断、相对时间文案 |
+| `app/src/main/java/.../MainActivity.java` | 双 WebView、脚本注入、表格 / 课表 / 更多页 HTML 生成 |
+| `app/src/main/java/.../ResultCache.java` | 空教室缓存：读写、7 天过期判断、相对时间文案 |
+| `app/src/main/java/.../ScheduleCache.java` | 课表缓存：读写、30 天过期判断 |
 | `app/src/main/assets/inject.js` | 注入教务页：限速查询、解析、过滤、回调 App |
-| `app/src/main/assets/table.css` | 结果页样式（手机适配、横向滚动、三层标记） |
+| `app/src/main/assets/table.css` | 空教室结果页样式（手机适配、横向滚动、三层标记） |
+| `app/src/main/assets/schedule.css` | 课表周视图样式 |
+| `app/src/main/assets/more.css` | 「更多」页样式 |
 | `app/src/main/res/drawable/ic_launcher_*.xml` | 校徽矢量图标（前景 / 单色层） |
+| `app/src/main/res/drawable/btn_flat_*.xml` | 顶栏扁平化按钮底板（蓝 / 灰） |
 | `app/src/main/res/mipmap-anydpi-v26/` | 自适应图标声明 |
 
 ## 教室过滤规则

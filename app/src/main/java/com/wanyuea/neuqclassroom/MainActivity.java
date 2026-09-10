@@ -28,6 +28,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -64,15 +65,21 @@ public class MainActivity extends Activity {
     /* ---------- 底部 Tab ---------- */
     private static final int TAB_CLASSROOM = 0;
     private static final int TAB_SCHEDULE = 1;
+    private static final int TAB_MORE = 2;
     private int currentTab = TAB_SCHEDULE;   // 课表是主页面
     private LinearLayout tabClassroom;
     private LinearLayout tabSchedule;
+    private LinearLayout tabMore;
     private View indClassroom;
     private View indSchedule;
+    private View indMore;
     private TextView tvClassroom;
     private TextView tvSchedule;
-    private ImageButton btnImport;
-    private ImageButton btnReimport;
+    private TextView tvMore;
+
+    /** 底部 Tab 的选中/未选中配色，三个 Tab 共用一处，避免改色时漏改 */
+    private static final int TAB_ON = 0xFF1B4D8F;
+    private static final int TAB_OFF = 0xFF9AA2B4;
 
     /* ---------- 顶栏按钮状态机 ----------
        所有按钮显隐只由 applyUi(state) 一处决定。
@@ -84,8 +91,9 @@ public class MainActivity extends Activity {
         LOGIN,          // 教务 WebView 可见，等用户登录
         ROOM_EMPTY,     // 空教室页，还没有数据 → 查空教室
         ROOM_DATA,      // 空教室页，有数据 → 刷新数据
-        SCHEDULE_EMPTY, // 课表页，还没导入 → 导入课表
-        SCHEDULE_DATA,  // 课表页，有课表 → 重新导入
+        SCHEDULE_EMPTY, // 课表页，还没导入 → 刷新（去登录/导入）
+        SCHEDULE_DATA,  // 课表页，有课表 → 刷新（重新导入）
+        MORE,           // 更多页（设置类，顶栏不放业务按钮）
         BUSY            // 任意页面正在查询/抓取
     }
     private UiState uiState = UiState.SCHEDULE_EMPTY;
@@ -124,18 +132,20 @@ public class MainActivity extends Activity {
         btnQuery = findViewById(R.id.btnQuery);
         btnBack = findViewById(R.id.btnBack);
         btnRefreshData = findViewById(R.id.btnRefreshData);
-        btnImport = findViewById(R.id.btnImport);
-        btnReimport = findViewById(R.id.btnReimport);
         tabClassroom = findViewById(R.id.tabClassroom);
         tabSchedule = findViewById(R.id.tabSchedule);
+        tabMore = findViewById(R.id.tabMore);
         indClassroom = findViewById(R.id.indClassroom);
         indSchedule = findViewById(R.id.indSchedule);
+        indMore = findViewById(R.id.indMore);
         tvClassroom = findViewById(R.id.tvClassroom);
         tvSchedule = findViewById(R.id.tvSchedule);
+        tvMore = findViewById(R.id.tvMore);
 
         injectJs = readAsset("inject.js");
         css = readAsset("table.css");
         scheduleCss = readAsset("schedule.css");
+        moreCss = readAsset("more.css");
 
         setupWebView(loginView);
         setupWebView(resultView);
@@ -148,16 +158,24 @@ public class MainActivity extends Activity {
         cm.setAcceptThirdPartyCookies(resultView, true);
         cm.flush();
 
-        btnQuery.setOnClickListener(v -> askDays());
-        btnBack.setOnClickListener(v -> showLogin());
-        btnRefreshData.setOnClickListener(v -> {
-            showLogin();
-            askDays();
+        btnQuery.setOnClickListener(v -> {
+            // 顶栏「查空教室」只在空教室页出现；课表页那个位置是刷新
+            if (currentTab == TAB_CLASSROOM) askDays();
+            else startScheduleImport();
         });
-        btnImport.setOnClickListener(v -> startScheduleImport());
-        btnReimport.setOnClickListener(v -> startScheduleImport());
+        btnBack.setOnClickListener(v -> showLogin());
+        // 刷新：空教室页重查空教室；课表页重新导入课表
+        btnRefreshData.setOnClickListener(v -> {
+            if (currentTab == TAB_CLASSROOM) {
+                showLogin();
+                askDays();
+            } else {
+                startScheduleImport();
+            }
+        });
         tabClassroom.setOnClickListener(v -> switchTab(TAB_CLASSROOM));
         tabSchedule.setOnClickListener(v -> switchTab(TAB_SCHEDULE));
+        tabMore.setOnClickListener(v -> switchTab(TAB_MORE));
 
         loginView.setWebViewClient(new WebViewClient() {
             @Override
@@ -251,7 +269,7 @@ public class MainActivity extends Activity {
         } else {
             showScheduleHtml(emptyScheduleHtml());
             applyUi(UiState.SCHEDULE_EMPTY);
-            statusText.setText("还没有课表，点「导入课表」");
+            statusText.setText("还没有课表，去「更多 → 教务处登录」导入");
         }
 
         // 后台加载登录页，让 Cookie 有机会自动续期
@@ -326,12 +344,11 @@ public class MainActivity extends Activity {
 
         // 各状态下的按钮可见性
         boolean vQuery = false, vBack = false, vRefreshData = false;
-        boolean vImport = false, vReimport = false;
 
         switch (state) {
             case LOGIN:
-                // 正看着教务网页：只给「查空教室」（课表 Tab 下给「导入课表」）
-                if (room) vQuery = true; else vImport = true;
+                // 正看着教务网页：空教室页给「查空教室」，课表页给「刷新」（=重新导入）
+                if (room) vQuery = true; else vRefreshData = true;
                 break;
             case ROOM_EMPTY:
                 vQuery = true;
@@ -340,13 +357,15 @@ public class MainActivity extends Activity {
                 vRefreshData = true;
                 break;
             case SCHEDULE_EMPTY:
-                vImport = true;
-                break;
             case SCHEDULE_DATA:
-                vReimport = true;
+                // 导入课表的入口已挪到「更多 → 教务处登录」，顶栏只留一个刷新
+                vRefreshData = true;
+                break;
+            case MORE:
+                // 更多页是设置列表，顶栏不放业务按钮，避免和页面内的按钮打架
                 break;
             case BUSY:
-                // 查询中：空教室页保留按钮位置（禁用态），课表页全部隐藏
+                // 查询中：空教室页保留按钮位置（禁用态），其余页面全部隐藏
                 if (room) vQuery = true;
                 break;
         }
@@ -354,15 +373,11 @@ public class MainActivity extends Activity {
         btnQuery.setVisibility(vQuery ? View.VISIBLE : View.GONE);
         btnBack.setVisibility(vBack ? View.VISIBLE : View.GONE);
         btnRefreshData.setVisibility(vRefreshData ? View.VISIBLE : View.GONE);
-        btnImport.setVisibility(vImport ? View.VISIBLE : View.GONE);
-        btnReimport.setVisibility(vReimport ? View.VISIBLE : View.GONE);
 
         // 忙碌时禁用可点的按钮，避免重复触发
         boolean busy = (state == UiState.BUSY);
         btnQuery.setEnabled(!busy);
         btnRefreshData.setEnabled(!busy);
-        btnImport.setEnabled(!busy);
-        btnReimport.setEnabled(!busy);
     }
 
     private void showLogin() {
@@ -387,6 +402,8 @@ public class MainActivity extends Activity {
     private void applyIdleUi() {
         if (currentTab == TAB_CLASSROOM) {
             applyUi(ResultCache.load(this) != null ? UiState.ROOM_DATA : UiState.ROOM_EMPTY);
+        } else if (currentTab == TAB_MORE) {
+            applyUi(UiState.MORE);
         } else {
             applyUi(scheduleData != null ? UiState.SCHEDULE_DATA : UiState.SCHEDULE_EMPTY);
         }
@@ -554,6 +571,52 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void thisWeek() {
             mainHandler.post(() -> resetWeek());
+        }
+
+        /* ---------- 「更多」页回调 ---------- */
+
+        /** 教务处登录：切到教务 WebView，让用户登录（或复用已有会话） */
+        @JavascriptInterface
+        public void openEams() {
+            mainHandler.post(() -> {
+                showLogin();
+                statusText.setText("教务系统 · 登录后回「更多」导入课表");
+            });
+        }
+
+        /** 导入课表：从「更多」页发起，与课表页刷新走同一条路径 */
+        @JavascriptInterface
+        public void importSchedule() {
+            mainHandler.post(MainActivity.this::startScheduleImport);
+        }
+
+        @JavascriptInterface
+        public void manageCache() {
+            mainHandler.post(MainActivity.this::showCacheManager);
+        }
+
+        @JavascriptInterface
+        public void openGithub() {
+            mainHandler.post(() -> {
+                try {
+                    startActivity(new android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(
+                                    "https://github.com/wy723161060/neuq-classroom-app")));
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "没有可用的浏览器", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void copyDiag() {
+            mainHandler.post(MainActivity.this::copyDiag);
+        }
+
+        @JavascriptInterface
+        public void showHowto() {
+            mainHandler.post(MainActivity.this::showHowto);
         }
     }
 
@@ -1072,6 +1135,281 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* ==================== 「更多」页 ==================== */
+
+    private String moreCss = "";
+
+    /** 渲染「更多」页（设置类功能都收在这里） */
+    private void showMore() {
+        showMoreHtml(buildMoreHtml());
+        applyUi(UiState.MORE);
+        statusText.setText("更多");
+    }
+
+    private void showMoreHtml(String html) {
+        loginView.setVisibility(View.GONE);
+        resultView.setVisibility(View.VISIBLE);
+        resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+    }
+
+    /** 文件大小文案 */
+    private static String sizeText(long bytes) {
+        if (bytes < 0) return "-";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(Locale.CHINA, "%.1f KB", bytes / 1024.0);
+        return String.format(Locale.CHINA, "%.2f MB", bytes / 1024.0 / 1024.0);
+    }
+
+    /** 某个缓存文件的大小（不存在返回 -1） */
+    private long cacheFileSize(String name) {
+        File f = new File(getFilesDir(), name);
+        return f.exists() ? f.length() : -1;
+    }
+
+    private int cacheFileCount(String name) {
+        return new File(getFilesDir(), name).exists() ? 1 : 0;
+    }
+
+    /** 让缓存区的统计数字整体重排一次（清空缓存后调用） */
+    private void refreshMorePage() {
+        if (currentTab == TAB_MORE) showMore();
+    }
+
+    /**
+     * 生成「更多」页 HTML。
+     *
+     * 三块内容：教务处登录 / 缓存管理 / 关于本应用，以后加功能往中间插卡片即可。
+     * 所有交互都通过 AndroidResultHost 回调 App，页面本身不碰业务逻辑。
+     */
+    private String buildMoreHtml() {
+        String ver = "";
+        try {
+            ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            // 取不到就留空，不影响页面
+        }
+        boolean hasSchedule = (scheduleData != null || ScheduleCache.load(this) != null);
+
+        long schedSize = cacheFileSize("schedule.json");
+        long roomSize = cacheFileSize("cache.json");
+        long totalSize = Math.max(schedSize, 0) + Math.max(roomSize, 0);
+        String schedAge = ScheduleCache.ageText(this);
+        String roomAge = ResultCache.ageText(this);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
+        sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
+        sb.append("<title>更多</title><style>").append(moreCss).append("</style></head><body>");
+
+        // ── 登录 ──
+        sb.append("<div class=\"group-title\">教务</div>");
+        sb.append("<div class=\"card\">");
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.openEams()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">教务处登录</span>")
+                .append("<span class=\"row-sub\">打开教务系统登录统一身份认证；</span>")
+                .append("<span class=\"row-sub\">登录后会话保留，可返回导入课表</span></span>")
+                .append("<span class=\"row-badge\">必做</span>")
+                .append("<span class=\"row-arrow\">›</span></button>");
+
+        // 未登录过就不给「导入课表」的错觉，直接引导去登录
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.importSchedule()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">导入课表</span>")
+                .append("<span class=\"row-sub\">")
+                .append(hasSchedule ? "重新从教务抓取当前学期课表" : "登录教务后从教务读取本学期课表")
+                .append("</span></span>")
+                .append(hasSchedule ? "<span class=\"row-badge off\">已有课表</span>" : "")
+                .append("<span class=\"row-arrow\">›</span></button>");
+        sb.append("<p class=\"card-desc\">课表只在你的手机上解析和保存，不会上传到任何服务器。</p>");
+        sb.append("</div>");
+
+        // ── 缓存 ──
+        sb.append("<div class=\"group-title\">存储</div>");
+        sb.append("<div class=\"card\">");
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.manageCache()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">缓存管理</span>")
+                .append("<span class=\"row-sub\">课表 ")
+                .append(schedSize >= 0 ? sizeText(schedSize) : "无")
+                .append(" · ")
+                .append(esc(hasSchedule ? schedAge : "未导入"))
+                .append("　｜　空教室 ")
+                .append(roomSize >= 0 ? sizeText(roomSize) : "无")
+                .append(" · ").append(esc(roomSize >= 0 ? roomAge : "未查询"))
+                .append("</span>")
+                .append("<span class=\"row-sub\">合计 ").append(sizeText(totalSize))
+                .append("，全部存在本机</span></span>")
+                .append("<span class=\"row-arrow\">›</span></button>");
+        sb.append("</div>");
+
+        // ── 关于 ──
+        sb.append("<div class=\"group-title\">关于</div>");
+        sb.append("<div class=\"card\"><div class=\"about\">")
+                .append("<div class=\"logo\">🏫</div>")
+                .append("<div class=\"app\">东秦空教室</div>")
+                .append("<div class=\"ver\">版本 ")
+                .append(esc(ver.isEmpty() ? "-" : ver)).append("</div>")
+                .append("<p class=\"txt\">东北大学秦皇岛分校空闲教室与课表速查工具。"
+                        + "内置浏览器打开学校教务系统，登录一次后即可查询；"
+                        + "<b>所有数据都在你的手机本地读取和缓存</b>，不经过任何第三方服务器。</p>")
+                .append("</div>");
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.openGithub()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">项目主页</span>")
+                .append("<span class=\"row-sub\">github.com/wy723161060/neuq-classroom-app</span></span>")
+                .append("<span class=\"row-arrow\">›</span></button>");
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.copyDiag()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">复制诊断信息</span>")
+                .append("<span class=\"row-sub\">版本、缓存状态等，反馈问题时一并提供</span></span>")
+                .append("<span class=\"row-arrow\">›</span></button>");
+        sb.append("<button class=\"row\" onclick=\"AndroidResultHost.showHowto()\">")
+                .append("<span class=\"row-main\"><span class=\"row-title\">使用说明</span>")
+                .append("<span class=\"row-sub\">怎么查空教室 / 导入课表 / 换学期</span></span>")
+                .append("<span class=\"row-arrow\">›</span></button>");
+        sb.append("</div>");
+
+        sb.append("<p class=\"foot\">非官方工具 · 数据取自教务系统实时查询<br>"
+                + "请以教务系统实际结果为准</p>");
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    /* ---------- 缓存管理弹窗 ---------- */
+
+    /** 缓存管理：显示两项缓存的大小/时间，可分别清除 */
+    private void showCacheManager() {
+        long schedSize = cacheFileSize("schedule.json");
+        long roomSize = cacheFileSize("cache.json");
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        java.util.List<Integer> kinds = new java.util.ArrayList<>();
+
+        labels.add("课表缓存　" + (schedSize >= 0 ? sizeText(schedSize) : "无")
+                + "　" + ScheduleCache.ageText(this));
+        kinds.add(1);
+        labels.add("空教室缓存　" + (roomSize >= 0 ? sizeText(roomSize) : "无")
+                + "　" + (roomSize >= 0 ? ResultCache.ageText(this) : "未查询"));
+        kinds.add(2);
+        labels.add("全部清除（含开学日期设置）");
+        kinds.add(0);
+
+        final String[] arr = labels.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("缓存管理")
+                .setItems(arr, (d, which) -> {
+                    int kind = kinds.get(which);
+                    if (kind == 0) confirmClearAll();
+                    else if (kind == 1) clearScheduleCache();
+                    else clearRoomCache();
+                })
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private void confirmClearAll() {
+        new AlertDialog.Builder(this)
+                .setTitle("清除全部缓存？")
+                .setMessage("将删除课表缓存、空教室缓存和开学日期设置。\n"
+                        + "课表需要重新导入，空教室需要重新查询。")
+                .setPositiveButton("清除", (d, w) -> {
+                    ScheduleCache.clear(this);
+                    ResultCache.clear(this);
+                    scheduleData = null;
+                    weekOffset = 0;
+                    // 开学日期是 SharedPreferences 里的 termStart_<sid>，一并清掉
+                    SharedPreferences.Editor e = prefs().edit();
+                    for (String k : prefs().getAll().keySet()) {
+                        if (k.startsWith(KEY_TERM_START)) e.remove(k);
+                    }
+                    e.apply();
+                    Toast.makeText(this, "缓存已全部清除", Toast.LENGTH_SHORT).show();
+                    refreshMorePage();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void clearScheduleCache() {
+        if (cacheFileSize("schedule.json") < 0) {
+            Toast.makeText(this, "没有课表缓存", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ScheduleCache.clear(this);
+        scheduleData = null;
+        weekOffset = 0;
+        Toast.makeText(this, "课表缓存已清除", Toast.LENGTH_SHORT).show();
+        refreshMorePage();
+    }
+
+    private void clearRoomCache() {
+        if (cacheFileSize("cache.json") < 0) {
+            Toast.makeText(this, "没有空教室缓存", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ResultCache.clear(this);
+        Toast.makeText(this, "空教室缓存已清除", Toast.LENGTH_SHORT).show();
+        refreshMorePage();
+    }
+
+    /** 诊断信息：反馈问题时贴给开发者 */
+    private String buildDiagText() {
+        String ver = "";
+        try {
+            ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            // 取不到就留空
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("东秦空教室 诊断信息\n");
+        sb.append("版本：").append(ver.isEmpty() ? "-" : ver).append("\n");
+        sb.append("Android：").append(android.os.Build.VERSION.RELEASE)
+                .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n");
+        sb.append("机型：").append(android.os.Build.MANUFACTURER).append(" ")
+                .append(android.os.Build.MODEL).append("\n");
+        sb.append("──── 缓存 ────\n");
+        long s = cacheFileSize("schedule.json");
+        long r = cacheFileSize("cache.json");
+        sb.append("课表缓存：").append(s >= 0 ? sizeText(s) + "，" + ScheduleCache.ageText(this) : "无")
+                .append("\n");
+        sb.append("空教室缓存：").append(r >= 0 ? sizeText(r) + "，" + ResultCache.ageText(this) : "无")
+                .append("\n");
+        if (scheduleData != null) {
+            sb.append("当前学期：").append(scheduleData.optString("termName", "-"))
+                    .append("（id=").append(scheduleData.optString("semesterId", "-")).append("）\n");
+            sb.append("课程数：").append(scheduleData.optJSONArray("courses") == null ? 0
+                    : scheduleData.optJSONArray("courses").length()).append("\n");
+        }
+        if (!lastDiagText.isEmpty()) {
+            sb.append("──── 最近一次导入失败 ────\n").append(lastDiagText).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private void copyDiag() {
+        String txt = buildDiagText();
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText("neuq-diag", txt));
+            Toast.makeText(this, "诊断信息已复制", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 使用说明 */
+    private void showHowto() {
+        String msg = "1. 首次使用\n"
+                + "   更多 → 教务处登录 → 登录统一身份认证（学校账号，App 不保存密码）。\n\n"
+                + "2. 导入课表\n"
+                + "   登录后回本页点「导入课表」，选学期即可；首次需选开学日期以便推算周次。\n\n"
+                + "3. 查空教室\n"
+                + "   底部「空教室」→ 顶栏刷新图标 → 选今天还是 7 天。也可在课表里直接点空白格子，"
+                + "只查那一组时段。\n\n"
+                + "4. 换学期 / 改开学日期\n"
+                + "   点课表顶部「第 N 周」即可重设开学日期；换学期请到「更多 → 导入课表」重选。\n\n"
+                + "5. 数据在哪\n"
+                + "   课表与空教室结果都缓存在手机本地，断网也能看。可在「更多 → 缓存管理」里清除。";
+        new AlertDialog.Builder(this)
+                .setTitle("使用说明")
+                .setMessage(msg)
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
     /* ==================== 课表 ==================== */
 
     private static final String[] WD_CN = {"一", "二", "三", "四", "五", "六", "日"};
@@ -1183,15 +1521,22 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    /** 底部 Tab 高亮：三个 Tab 共用一处，避免以后加 Tab 漏改 */
+    private void applyTabHighlight(int tab) {
+        indClassroom.setVisibility(tab == TAB_CLASSROOM ? View.VISIBLE : View.INVISIBLE);
+        indSchedule.setVisibility(tab == TAB_SCHEDULE ? View.VISIBLE : View.INVISIBLE);
+        indMore.setVisibility(tab == TAB_MORE ? View.VISIBLE : View.INVISIBLE);
+        tvClassroom.setTextColor(tab == TAB_CLASSROOM ? TAB_ON : TAB_OFF);
+        tvSchedule.setTextColor(tab == TAB_SCHEDULE ? TAB_ON : TAB_OFF);
+        tvMore.setTextColor(tab == TAB_MORE ? TAB_ON : TAB_OFF);
+    }
+
     private void switchTab(int tab) {
         // 启动时 currentTab 已是课表，此时点「课表」仍要重新渲染（可能刚导入完或日期已改）
         boolean sameTab = (currentTab == tab);
         currentTab = tab;
         boolean room = (tab == TAB_CLASSROOM);
-        indClassroom.setVisibility(room ? View.VISIBLE : View.INVISIBLE);
-        indSchedule.setVisibility(room ? View.INVISIBLE : View.VISIBLE);
-        tvClassroom.setTextColor(room ? 0xFF1B4D8F : 0xFF9AA2B4);
-        tvSchedule.setTextColor(room ? 0xFF9AA2B4 : 0xFF1B4D8F);
+        applyTabHighlight(tab);
         if (sameTab && tab == TAB_CLASSROOM) return;
 
         // 切 Tab 后按钮状态由下面的渲染路径各自设定，这里不用预设
@@ -1222,13 +1567,15 @@ public class MainActivity extends Activity {
             } else {
                 showLogin();
             }
+        } else if (tab == TAB_MORE) {
+            showMore();
         } else {
             if (scheduleData != null) {
                 renderSchedule();
             } else {
                 showScheduleHtml(emptyScheduleHtml());
                 applyUi(UiState.SCHEDULE_EMPTY);
-                statusText.setText("还没有课表，点「导入课表」");
+                statusText.setText("还没有课表，去「更多 → 教务处登录」导入");
             }
         }
     }
@@ -1440,7 +1787,7 @@ public class MainActivity extends Activity {
                 + "<style>" + scheduleCss + "</style></head><body>"
                 + "<h1>我的课表</h1>"
                 + "<div class=\"empty\"><b>还没有课表</b>"
-                + "点上方「导入课表」，登录教务后自动读取<br>导入一次即可长期离线查看</div>"
+                + "去底部「更多 → 教务处登录」，登录后即可导入<br>导入一次即可长期离线查看</div>"
                 + "<p class=\"tip\">课表只从你本人已登录的教务会话读取，保存在手机本地，不会上传。</p>"
                 + "</body></html>";
     }
@@ -1758,8 +2105,9 @@ public class MainActivity extends Activity {
             }
             return;
         }
+        // 更多页 / 空教室页都是次页面 → 先回课表主页
         if (currentTab != TAB_SCHEDULE) {
-            switchTab(TAB_SCHEDULE);   // 空教室是次页面 → 回课表主页
+            switchTab(TAB_SCHEDULE);
             return;
         }
         super.onBackPressed();         // 已在课表主页 → 退出

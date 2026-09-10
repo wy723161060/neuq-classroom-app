@@ -1,0 +1,262 @@
+/* ============================================================
+   「更多」页样式
+   与 table.css / schedule.css 同一套设计语言：
+   浅灰底 #f5f6f8 + 白卡片 + 校徽蓝 #1B4D8F + 12px 圆角
+   ============================================================ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 12px 10px 26px;
+  font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei",
+        "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
+  color: #222;
+  background: #f5f6f8;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1 { font-size: 18px; margin: 4px 0 2px; }
+.sub { margin: 0 0 12px; font-size: 12px; color: #8b92a3; }
+
+/* ── 分组标题 ── */
+.group-title {
+  margin: 16px 0 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b92a3;
+  letter-spacing: .3px;
+}
+.group-title:first-of-type { margin-top: 4px; }
+
+/* ── 卡片 ── */
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  overflow: hidden;
+  margin-bottom: 10px;
+  /* 卡片内容一律不撑破容器：中文长串（GitHub 地址等）也要能折行 */
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 卡片内的说明文字 */
+.card-desc {
+  margin: 0;
+  padding: 10px 14px 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8b92a3;
+}
+.card-desc:last-child { padding-bottom: 12px; }
+
+/* ── 行 ── */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: none;
+  border-bottom: 1px solid #f2f3f6;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  color: #222;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s;
+}
+.row:last-child { border-bottom: none; }
+.row:active { background: #f6f8fc; }
+
+.row-main { flex: 1; min-width: 0; }
+.row-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #222;
+  line-height: 1.45;
+}
+.row-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #9aa2b4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.row-arrow { flex: none; font-size: 15px; color: #c3cad9; line-height: 1; }
+.row-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: #1B4D8F;
+  white-space: nowrap;
+}
+.row-badge.warn { background: #B4700A; }
+.row-badge.off  { color: #7b8494; background: #eef0f4; }
+
+/* 红色危险行（清除缓存） */
+.row.danger .row-title { color: #B3261E; }
+
+/* ── 主按钮 ── */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(#2f6bb5, #1B4D8F);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .12s;
+}
+.btn:active { opacity: .85; }
+.btn.ghost {
+  color: #1B4D8F;
+  background: #eaf1fb;
+  border: 1px solid #c7d9f2;
+}
+.btn.wrap { padding: 12px 14px; margin: 0 0 2px; }
+
+/* ── 关于区 ── */
+.about {
+  /* 左右的留白交给内层元素，这里只控上下 —— 避免 padding + margin 叠加把宽度算窄 */
+  padding: 18px 0 12px;
+  text-align: center;
+}
+.about .logo { font-size: 26px; line-height: 1; }
+.about .app {
+  margin: 8px 0 2px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #222;
+}
+.about .ver {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #8b92a3;
+  font-variant-numeric: tabular-nums;
+}
+.about .txt {
+  /* 与 .row 的左右内边距对齐，读起来是一条竖线 */
+  margin: 0;
+  padding: 0 14px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #6c7686;
+  text-align: left;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.about .txt b { color: #1B4D8F; font-weight: 600; }
+
+/* ── 原理说明（可折叠） ── */
+details.howto {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  overflow: hidden;
+}
+details.howto > summary {
+  padding: 13px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+}
+details.howto > summary::-webkit-details-marker { display: none; }
+details.howto > summary::after {
+  content: "›";
+  margin-left: auto;
+  font-size: 16px;
+  color: #c3cad9;
+  transition: transform .2s;
+}
+details.howto[open] > summary::after { transform: rotate(90deg); }
+
+.howto-body {
+  padding: 0 14px 14px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: #5b6478;
+}
+.howto-body ol { margin: 0; padding-left: 18px; }
+.howto-body li { margin-bottom: 5px; }
+.howto-body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f0f2f6;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* ── 页脚 ── */
+.foot {
+  margin: 16px 0 0;
+  font-size: 11px;
+  color: #a8afbd;
+  text-align: center;
+  line-height: 1.7;
+}
+
+/* ── 清除缓存确认弹层 ── */
+.mask {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 26, 38, .45);
+  z-index: 50;
+}
+.mask.show { display: flex; }
+.sheet {
+  width: 100%;
+  max-width: 320px;
+  padding: 20px 18px 14px;
+  border-radius: 14px;
+  background: #fff;
+  text-align: center;
+  animation: pop .18s ease-out both;
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(.94); }
+  to   { opacity: 1; transform: none; }
+}
+.sheet h3 { margin: 0 0 6px; font-size: 15px; }
+.sheet p { margin: 0 0 16px; font-size: 12.5px; line-height: 1.6; color: #8b92a3; }
+.sheet .acts { display: flex; gap: 8px; }
+.sheet .acts button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 9px;
+  border: 1px solid #dfe3ea;
+  background: #fff;
+  color: #44506b;
+  font-family: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.sheet .acts button.primary {
+  border-color: #B3261E;
+  background: #B3261E;
+  color: #fff;
+  font-weight: 600;
+}
