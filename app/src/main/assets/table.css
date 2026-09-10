@@ -15,6 +15,14 @@ h1 { font-size: 18px; margin: 4px 0 2px; }
   border: 1px solid #c8e6c9;
 }
 .cache.expired { color: #8a4b00; background: #fff6e5; border-color: #ffe0b2; }
+.cache b { font-weight: 700; }
+
+/* 「今天」小标签 */
+.tag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  font-size: 10.5px; font-weight: 600; border-radius: 20px;
+  color: #fff; background: #1B4D8F; vertical-align: 1px;
+}
 
 /* 图例 */
 .legend {

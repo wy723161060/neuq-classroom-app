@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 滚轮式日期选择（不用日历网格），用于选「本学期第 1 周从哪天开始」
+     datePickerMode=spinner + calendarViewShown=false 才是三个滚轮 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="6dp">
+
+    <DatePicker
+        android:id="@+id/datePicker"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:datePickerMode="spinner"
+        android:calendarViewShown="false"
+        android:spinnersShown="true"
+        android:headerBackground="@null" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="6dp"
+        android:gravity="center"
+        android:text="选开学那一周的任意一天即可，会自动按周一算起"
+        android:textSize="11.5sp"
+        android:textColor="#8b92a3" />
+</LinearLayout>
