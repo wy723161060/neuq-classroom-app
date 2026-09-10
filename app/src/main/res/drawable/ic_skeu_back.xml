@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  返回教务：左向箭头 + 竖杠。
+  竖杠是「回到列表/首页」的常见隐喻，但画成圆头短杠、并留出间距，
+  免得和箭头连在一起看着像字母 K。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 箭头尖 -->
+    <path
+        android:fillColor="#FF4A5568"
+        android:pathData="M11.2,6.1l1.5,1.5l-4.3,4.4l4.3,4.4l-1.5,1.5L5.4,12z" />
+
+    <!-- 竖杠：与箭头留 1.6 的间隙 -->
+    <path
+        android:fillColor="#FF4A5568"
+        android:pathData="M14.1,5.6h2.2v12.8h-2.2z" />
+</vector>

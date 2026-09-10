@@ -120,6 +120,57 @@ h1 {
 .legend del { color: #999; }
 
 /* ============================================================
+   单时段视图：顶部时段快捷切换
+   ============================================================ */
+
+.slotbar {
+  margin: 8px 0 6px;
+  padding: 9px 11px 10px;
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 10px;
+  box-shadow: var(--container-shadow);
+}
+
+.slotbar-tip {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #7b7b7b;
+}
+
+.slotbar-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.slotbtn {
+  flex: 1 1 auto;
+  min-width: 68px;
+  padding: 7px 9px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: linear-gradient(#ffffff, #f2f3f5);
+  color: #555;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.slotbtn:active { background: #e9ecf1; }
+
+/* 当前正在看的这一组 */
+.slotbtn.cur {
+  border-color: var(--brand);
+  background: linear-gradient(#2f6bb5, var(--brand));
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(27, 77, 143, .35);
+}
+
+/* ============================================================
    日期块（沿用折叠列表）
    ============================================================ */
 

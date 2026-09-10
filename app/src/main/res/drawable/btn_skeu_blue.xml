@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  拟物化按钮底板 · 蓝（主操作：刷新数据 / 查空教室）
+  三层：底色 → 上下渐变 → 顶部高光，模拟塑料按键的厚度感。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 底部投影：让按键像凸起在纸面上 -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <solid android:color="#123A6E" />
+        </shape>
+    </item>
+
+    <!-- 主体：略高一像素，露出下方投影 -->
+    <item android:bottom="2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="#3E7BC4"
+                android:centerColor="#2A62A8"
+                android:endColor="#1B4D8F"
+                android:type="linear" />
+            <stroke android:width="1dp" android:color="#123A6E" />
+        </shape>
+    </item>
+
+    <!-- 顶部高光：一条细亮边，模拟光线打在圆角上 -->
+    <item android:bottom="2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="#66FFFFFF"
+                android:centerColor="#18FFFFFF"
+                android:endColor="#00FFFFFF"
+                android:type="linear" />
+        </shape>
+    </item>
+</layer-list>

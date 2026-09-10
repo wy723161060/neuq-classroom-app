@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 导入课表：粗壮的向下箭头 + 开口托盘（白色，用于蓝底按钮） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 箭杆 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.7,3.2h2.6v7.5h-2.6z" />
+
+    <!-- 箭头（倒三角） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,16.4l-4.4,-4.4h8.8z" />
+
+    <!-- 托盘：底部横条 + 两侧短竖 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.6,14.9h2.5v2.4h9.8v-2.4h2.5v2.4c0,1.5 -1.2,2.7 -2.7,2.7H7.3c-1.5,0 -2.7,-1.2 -2.7,-2.7z" />
+</vector>

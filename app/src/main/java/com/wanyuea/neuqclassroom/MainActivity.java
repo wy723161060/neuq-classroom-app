@@ -17,7 +17,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.DatePicker;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -52,9 +52,9 @@ public class MainActivity extends Activity {
     private WebView resultView;
     private TextView statusText;
     private ProgressBar progressBar;
-    private Button btnQuery;
-    private Button btnBack;
-    private Button btnRefreshData;
+    private ImageButton btnQuery;
+    private ImageButton btnBack;
+    private ImageButton btnRefreshData;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String injectJs = "";
     private String css = "";
@@ -71,8 +71,8 @@ public class MainActivity extends Activity {
     private View indSchedule;
     private TextView tvClassroom;
     private TextView tvSchedule;
-    private Button btnImport;
-    private Button btnReimport;
+    private ImageButton btnImport;
+    private ImageButton btnReimport;
 
     /* ---------- 顶栏按钮状态机 ----------
        所有按钮显隐只由 applyUi(state) 一处决定。
@@ -105,6 +105,8 @@ public class MainActivity extends Activity {
     private int singleTe = 2;
     private String highlightDate = "";      // 从课表跳过来时，要高亮的那一天
     private int highlightTb = 0;            // 高亮的起始节次（0=不高亮）
+    private boolean singleMode = false;     // 当前结果页是不是「单时段」视图（带时段快捷切换）
+    private String singleWeekday = "";      // 单时段视图的星期，用于时段快捷按钮重查
 
     private static final String PREFS = "neuq_prefs";
     private static final String KEY_TERM_START = "termStart_";    // 第 1 周周一，毫秒
@@ -302,6 +304,7 @@ public class MainActivity extends Activity {
         queryDays = days;
         highlightDate = "";        // 手动查的，不带课表高亮
         highlightTb = 0;
+        singleMode = false;        // 整表视图，不是单时段
         statusText.setText("正在打开教务查询页…");
         setBusy(true);
         progressBar.setProgress(0);
@@ -523,6 +526,15 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> jumpToFreeRooms(day, section, section));
         }
 
+        /**
+         * 结果页顶部时段快捷切换：点了「下午5-6节」就换到那一组重查。
+         * 日期沿用当前展示的那一天，所以只传时段下标。
+         */
+        @JavascriptInterface
+        public void pickSlot(final int slotIdx) {
+            mainHandler.post(() -> switchSlot(slotIdx));
+        }
+
         /** 点击课程卡片 → 显示这节课的详情 */
         @JavascriptInterface
         public void onCourseClick(final int day, final int startSection, final int endSection) {
@@ -605,18 +617,45 @@ public class MainActivity extends Activity {
             + "},false);"
             + "})();</script>";
 
-    private String buildHtml(JSONObject o) throws Exception {
-        JSONArray days = o.getJSONArray("days");
+    /**
+     * 单时段视图顶部的时段快捷切换条。
+     *
+     * 用户从课表点进来时只查了一组（比如第 3-4 节），这一排按钮让他不用退回课表
+     * 就能直接换到别的一组重查。「昼间1-8节」是教务的合并统计项，不放进切换条。
+     */
+    private void appendSlotSwitcher(StringBuilder sb) {
+        sb.append("<div class=\"slotbar\">")
+                .append("<div class=\"slotbar-tip\">点课表空白格只查了这一组，"
+                        + "想换别的时段直接点下面：</div>")
+                .append("<div class=\"slotbar-btns\">");
+        for (int i = 0; i < FREE_SLOTS.length; i++) {
+            if (i == 4) continue;    // 跳过「昼间1-8节」合并项
+            int tb = FREE_SLOTS[i][0], te = FREE_SLOTS[i][1];
+            boolean cur = (tb == singleTb && te == singleTe);
+            sb.append("<button class=\"slotbtn").append(cur ? " cur" : "")
+                    .append("\" onclick=\"AndroidResultHost.pickSlot(").append(i).append(")\">")
+                    .append(tb).append("-").append(te).append(" 节")
+                    .append("</button>");
+        }
+        sb.append("</div></div>");
+    }
+
+    private String buildHtml(JSONObject o) throws Exception {        JSONArray days = o.getJSONArray("days");
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.append("<title>东秦空教室速查</title><style>").append(css).append("</style></head><body>");
 
         // 页头：先给「今天」的日期，再给表格标题（对齐参考站点的版式）
-        int totalDays = days.length();
         sb.append("<h1>空闲教室总表</h1>");
         sb.append("<p class=\"info-text\">数据实时取自教务系统 · 更新于 ")
                 .append(esc(o.optString("updated", ""))).append("</p>");
+
+        // 单时段视图（点课表空白格跳过来）：顶部给一排时段快捷切换
+        if (o.optBoolean("single", false)) {
+            appendSlotSwitcher(sb);
+        }
+
         int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
         if (raw > 0) {
             sb.append("<p class=\"info-text\">已排除实验室、机房、语音室等非自习教室：原始 ")
@@ -680,9 +719,17 @@ public class MainActivity extends Activity {
                         + "请点「返回教务」稍等几秒后重查。</p>");
             }
 
+            // 单时段视图：说明为什么只有一组数据；整表视图：说明为什么整天都查了
             if (isJumped && highlightTb > 0) {
-                sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
-                        .append(" 节</b>，怕你还想看看别的时段，这一天整个都查了。</p>");
+                if (singleMode) {
+                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
+                            .append(" 节</b>，属 <b>").append(highlightTb).append("-")
+                            .append(highlightTb + 1).append(" 节</b> 这一组，"
+                                    + "下面是这一组所有空闲教室。</p>");
+                } else {
+                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
+                            .append(" 节</b>，这一天整个都查了。</p>");
+                }
             }
 
             // 全天空闲集合（用于加粗）
@@ -1510,11 +1557,42 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 课表 → 空教室：点到某天的空白时段，就把那一天完整查一遍。
+     * 空教室接口返回的时段定义，与 inject.js 的 SLOTS 一一对应。
      *
-     * 以前只查被点的那一节课，用户看到「第 3-4 节有空教室」之后想知道「那第 5-6 节呢」
-     * 就得退回去重点一次。既然教务接口按「整天的连续 N 天」计价，索性一次把这一天 7 个
-     * 时段都拉回来，结果页里高亮用户点的那一节 —— 多花几秒，少点好几次。
+     * ⚠️ 这是「查询时段」，不是「课表节次」：一个时段含 2 节，且第 5 项
+     * 「昼间1-8节」是教务为了显示而混进来的合并项，跨度 8 节。
+     * 所以**绝不能拿课表的节次直接当它的下标** —— 第 2 节会指到「上午3-4节」。
+     */
+    private static final int[][] FREE_SLOTS = {
+            {1, 2}, {3, 4}, {5, 6}, {7, 8}, {1, 8}, {9, 10}, {11, 12}
+    };
+
+    /**
+     * 课表节次 → 空教室时段下标。
+     *
+     * 取「覆盖该节次、且跨度最小」的那个时段；跨度最小保证了第 5 节命中
+     * 「下午5-6节」而不是跨度 8 的「昼间1-8节」。找不到返回 -1。
+     */
+    private static int slotIndexOf(int section) {
+        int best = -1, bestSpan = Integer.MAX_VALUE;
+        for (int i = 0; i < FREE_SLOTS.length; i++) {
+            int tb = FREE_SLOTS[i][0], te = FREE_SLOTS[i][1];
+            if (section >= tb && section <= te) {
+                int span = te - tb + 1;
+                if (span < bestSpan) {
+                    bestSpan = span;
+                    best = i;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 课表 → 空教室：点到某天的空白时段，直接查那一节的空闲教室。
+     *
+     * 只查被点的那一节（一次请求，约 1.5 秒），结果页把那一条置顶并高亮 ——
+     * 用户点「第 3 节」，就该立刻看到第 3 节的空教室，而不是一整天 7 个时段里去找。
      */
     private void jumpToFreeRooms(int day, int startSection, int endSection) {
         if (scheduleData == null) return;
@@ -1522,40 +1600,62 @@ public class MainActivity extends Activity {
 
         int week = currentWeek();
         long target = weekMonday(week) + (day - 1) * DAY_MS;
-        long today = System.currentTimeMillis();
-        int offset = (int) Math.round((target - startOfDay(today)) / (double) DAY_MS);
+        int offset = (int) Math.round((target - startOfDay(System.currentTimeMillis())) / (double) DAY_MS);
 
-        String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " "
-                + startSection + "-" + endSection + " 节";
+        // 把课表节次折到「查询时段」上，再拿时段自己的节次区间去查
+        int slotIdx = slotIndexOf(startSection);
+        int qb = startSection, qe = endSection;
+        if (slotIdx >= 0) {
+            qb = FREE_SLOTS[slotIdx][0];
+            qe = FREE_SLOTS[slotIdx][1];
+        } else if (qe < qb) {
+            qe = qb;
+        }
+
+        String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " " + qb + "-" + qe + " 节";
 
         // 切到空教室 Tab（复用 switchTab，保证按钮显隐与 Tab 高亮不会两处漂移）
         if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
         else applyIdleUi();
 
         highlightDate = dateStr(target);
-        highlightTb = startSection;
+        highlightTb = qb;
+        singleMode = true;
+        singleWeekday = WD_CN[day - 1];
 
-        if (offset < 0) {
-            // 过去的日子：整周查询装不下，退回单时段查询
-            singleDate = dateStr(target);
-            singleTb = startSection;
-            singleTe = endSection;
-            singleLabel = label;
-            pendingSingle = true;
-            statusText.setText("正在查询 " + label + " 的空教室…");
-            setBusy(true);
-            loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
-            return;
-        }
-
-        // 未来/今天：查这一天完整 7 个时段
-        queryStartOffset = offset;
-        queryDays = 1;
-        pendingQuery = true;
-        statusText.setText("正在查询 周" + WD_CN[day - 1] + " 全天 7 个时段的空教室"
-                + (offset == 0 ? "（今天）" : "…"));
+        // 过去的日子也能查（单时段接口不受「从今天起算」限制），所以不需要回退分支
+        singleDate = dateStr(target);
+        singleTb = qb;
+        singleTe = qe;
+        singleLabel = label;
+        pendingSingle = true;
+        statusText.setText("正在查询 " + label + " 的空教室…");
         setBusy(true);
-        progressBar.setProgress(0);
+        loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
+    }
+
+    /**
+     * 单时段视图里换一组时段重查（结果页顶部的快捷按钮）。
+     *
+     * 日期不变，只换节次区间 —— 这样用户在「第 3-4 节」看完，想再看看「第 5-6 节」，
+     * 直接在结果页点一下就行，不用退回课表再点一次。
+     */
+    private void switchSlot(int slotIdx) {
+        if (slotIdx < 0 || slotIdx >= FREE_SLOTS.length) return;
+        if (singleDate.isEmpty()) return;
+
+        int qb = FREE_SLOTS[slotIdx][0];
+        int qe = FREE_SLOTS[slotIdx][1];
+        String label = singleDate + " " + singleWeekday + " " + qb + "-" + qe + " 节";
+
+        highlightTb = qb;
+        singleTb = qb;
+        singleTe = qe;
+        singleLabel = label;
+        pendingSingle = true;
+
+        statusText.setText("正在查询 " + qb + "-" + qe + " 节的空教室…");
+        setBusy(true);
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 

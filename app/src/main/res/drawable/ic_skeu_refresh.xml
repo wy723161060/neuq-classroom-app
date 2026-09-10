@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  刷新：两条半圆弧 + 两个箭头，经典「循环箭头」造型。
+  比单条缺口圆环更容易辨认，缩小到 20dp 也不会糊成一团。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 上弧：从左侧升到右上方，末端带箭头 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,4.5c-2.5,0 -4.7,1.3 -6.0,3.2l1.7,1.2C8.6,7.4 10.2,6.5 12,6.5c1.9,0 3.6,1.0 4.5,2.5h-2.4l3.1,3.1l3.1,-3.1h-2.3C17.0,6.2 14.7,4.5 12,4.5z" />
+
+    <!-- 下弧：从右侧降到左下方，末端带箭头 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,19.5c2.5,0 4.7,-1.3 6.0,-3.2l-1.7,-1.2C15.4,16.6 13.8,17.5 12,17.5c-1.9,0 -3.6,-1.0 -4.5,-2.5h2.4l-3.1,-3.1l-3.1,3.1h2.3C7.0,17.8 9.3,19.5 12,19.5z" />
+</vector>
