@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  更多：竖排三点（⋮）。
+
+  和「更多」页行尾的 › 箭头（ic_more_arrow）不是一回事：那个表示「点进去」，
+  这个是顶栏上的动作按钮。参考用户给的课表截图，顶栏最右就是 ⋮。
+  三个点用圆角矩形而不是正圆 —— 正圆在小尺寸下会被抗锯齿吃成模糊的灰点。
+
+  填充色是白色（与 ic_skeu_refresh / ic_skeu_import 一样，当年都按蓝底按钮画的），
+  放到透明底顶栏上必须由使用处 android:tint 上色，否则白底白点看不见。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.6,3.2h2.8v2.8h-2.8z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.6,10.6h2.8v2.8h-2.8z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.6,18h2.8v2.8h-2.8z" />
+</vector>

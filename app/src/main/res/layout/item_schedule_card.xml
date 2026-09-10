@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「课表设置」面板里的一张课表卡片。
+
+  选中态（蓝底 + 蓝框）由代码在 inflate 之后 setBackgroundResource 切换，
+  XML 里只放默认的未选中样式，避免两份几乎一样的布局。
+
+  「当前」徽标与删除 X 的显隐也都由代码控制：
+  只有一张课表时不给删（删完就没有课表了）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:orientation="vertical"
+    android:background="@drawable/sched_card_off"
+    android:paddingStart="14dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/schedCardName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="我的课表"
+            android:textSize="14.5sp"
+            android:textStyle="bold"
+            android:textColor="#1B1F27" />
+
+        <TextView
+            android:id="@+id/schedCardBadge"
+            style="@style/MoreBadge"
+            android:text="当前" />
+
+        <ImageButton
+            android:id="@+id/schedCardDel"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/btn_icon_flat"
+            android:src="@drawable/ic_skeu_close"
+            android:tint="#A8AFBD"
+            android:scaleType="centerInside"
+            android:contentDescription="删除这张课表" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/schedCardMeta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="6dp"
+        android:lineSpacingExtra="2dp"
+        android:text="—"
+        android:textSize="11.5sp"
+        android:textColor="#9AA2B4" />
+</LinearLayout>

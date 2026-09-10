@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  删除/关闭：叉号。
+  课表卡片右侧用它删掉一张表。白色填充，由使用处 android:tint 上色（灰或红）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10.3l4.3,-4.3l1.7,1.7l-4.3,4.3l4.3,4.3l-1.7,1.7l-4.3,-4.3l-4.3,4.3l-1.7,-1.7l4.3,-4.3l-4.3,-4.3l1.7,-1.7z" />
+</vector>

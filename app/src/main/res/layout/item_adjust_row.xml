@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「调课」面板里的一条已有记录。
+
+  左边一句话说清「哪门课从哪挪到哪」，右边一个「撤销」。
+  调课是临时动作，用户最需要的就是能方便地改回去，所以撤销做成了独立按钮，
+  而不是藏在长按里。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="6dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/cache_card_bg"
+    android:paddingStart="12dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <TextView
+        android:id="@+id/adjRowText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginEnd="8dp"
+        android:lineSpacingExtra="2dp"
+        android:text="—"
+        android:textSize="11.5sp"
+        android:textColor="#55617A" />
+
+    <TextView
+        android:id="@+id/adjRowUndo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/btn_outline_blue"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="撤销"
+        android:textSize="12sp"
+        android:textColor="#1B4D8F" />
+</LinearLayout>

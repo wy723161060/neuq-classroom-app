@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  用外部浏览器打开：方框里斜向伸出的箭头（↗）。
+
+  原来这个位置复用的是行尾 › 箭头 ic_more_arrow —— 在一个「跳到外部浏览器」的动作上
+  放一个「进入下一页」的箭头，语义是错的。参考用户给的课表截图，这里就该是 ↗。
+
+  白色填充，由使用处 android:tint 上色（顶栏统一蓝色）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 斜向箭头 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.6,3.2h6.2v6.2h-2.4v-2.1l-4,4l-1.7,-1.7l4,-4h-2.1z" />
+
+    <!-- 开口方框：右下留缺口的「容器」 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5.6,5.6h5.2v2.4h-2.8v8h8v-2.8h2.4v5.2h-12.8z" />
+</vector>

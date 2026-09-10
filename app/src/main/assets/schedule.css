@@ -103,6 +103,7 @@ td.cell.today .free-slot .plus { color: #a8c2e4; }
   border-radius: 7px; padding: 4px 3px; height: 100%;
   display: flex; flex-direction: column; justify-content: center; gap: 1px;
   color: #fff; text-align: center; overflow: hidden; cursor: pointer;
+  position: relative;          /* 「调」角标的定位基准 */
   animation: rise .3s cubic-bezier(.21,.61,.35,1) both;
 }
 .course:active { opacity: .82; }
@@ -126,6 +127,49 @@ td.cell.today .free-slot .plus { color: #a8c2e4; }
 .c5 { background: #0E5A6E; }
 .c6 { background: #7A2E4E; }
 .c7 { background: #3D5A2E; }
+
+/* ── 调课（本地调整） ──────────────────────────────────────────────
+   调过的课要能一眼看出来，所以做了「两处标记」：
+     · 目标位置 —— 课程卡片加一圈橙色描边 + 右上角「调」角标；
+     · 原位置   —— 留一个虚线「影子」，写着这节课去哪了。
+   只画一边的话，用户会以为课表算错了（要么觉得课少了一节，
+   要么觉得凭空多了一节）。 */
+.course.adj {
+  box-shadow: inset 0 0 0 2px #FFB020;
+  padding-right: 14px;         /* 给右上角的「调」字让位，免得压在课名上 */
+}
+.course .tag {
+  position: absolute; top: 2px; right: 2px;
+  background: #FFB020; color: #4A3000;
+  font-size: 8.5px; font-weight: 700; line-height: 1;
+  padding: 2px 3px; border-radius: 4px;
+}
+
+/* 原位置的影子：虚线 + 米色底，视觉上比真课弱一档 */
+.ghost {
+  width: 100%; height: 100%; min-height: 42px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px dashed #EDC37E; border-radius: 7px; background: #FFFBF2;
+  padding: 2px; overflow: hidden; text-align: center;
+  font-size: 8.5px; line-height: 1.2; color: #B07A20;
+}
+.ghost b {
+  font-size: 9.5px; font-weight: 600; color: #96631A;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ghost.cancel { border-color: #E8B4B0; background: #FDF4F3; color: #B4554A; }
+.ghost.cancel b { color: #A3433A; }
+
+/* 调课清单：影子可能被别的课挡住（同格只画得下一个），
+   清单保证「本周改了哪些课」永远看得到 */
+.adjsum {
+  margin: 10px 0 0; padding: 10px 12px; border-radius: 9px;
+  background: #FFF9EE; border: 1px solid #F5E3C0;
+  font-size: 11.5px; line-height: 1.75; color: #8A6420;
+}
+.adjsum > b { display: block; margin-bottom: 3px; color: #7A5618; }
+.adjsum .row { padding-left: 2px; }
+.adjsum .hint { margin-top: 4px; color: #A8894F; }
 
 /* 空态 / 提示 */
 .empty {

@@ -22,10 +22,16 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.AdapterView;
 import android.widget.ImageButton;
+import android.widget.ArrayAdapter;
 import android.widget.DatePicker;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -39,9 +45,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
@@ -67,6 +75,9 @@ public class MainActivity extends Activity {
     private ProgressBar progressBar;
     private ImageButton btnRefreshData;
     private ImageButton btnImportTop;
+    private ImageButton btnMoreTop;
+    /** 课表设置面板正在同步滑杆/列表：避免 setProgress 反过来触发监听器里的重绘 */
+    private boolean schedSyncing = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String injectJs = "";
     private String css = "";
@@ -157,6 +168,7 @@ public class MainActivity extends Activity {
         progressBar = findViewById(R.id.progressBar);
         btnRefreshData = findViewById(R.id.btnRefreshData);
         btnImportTop = findViewById(R.id.btnImportTop);
+        btnMoreTop = findViewById(R.id.btnMoreTop);
         tabClassroom = findViewById(R.id.tabClassroom);
         tabSchedule = findViewById(R.id.tabSchedule);
         tabMore = findViewById(R.id.tabMore);
@@ -185,11 +197,12 @@ public class MainActivity extends Activity {
         cm.setAcceptThirdPartyCookies(webView, true);
         cm.flush();
 
-        // 空教室页顶栏的两个动作：
-        //   刷新 —— 重新查询空闲教室（未登录会先走登录，登录后再让选范围）
-        //   导入 —— 从教务导入课表
+        // 顶栏动作（按 Tab 分工，显隐由 applyUi 一处决定）：
+        //   空教室页 —— 刷新（重新查询空闲教室，未登录先走登录，登录后再让选范围）
+        //   课表页   —— 导入课表（从教务抓取）+ 更多（课表设置面板）
         btnRefreshData.setOnClickListener(v -> refreshRooms());
         btnImportTop.setOnClickListener(v -> startScheduleImport());
+        btnMoreTop.setOnClickListener(v -> showSchedulePanel());
         tabClassroom.setOnClickListener(v -> switchTab(TAB_CLASSROOM));
         tabSchedule.setOnClickListener(v -> switchTab(TAB_SCHEDULE));
         tabMore.setOnClickListener(v -> switchTab(TAB_MORE));
@@ -284,34 +297,21 @@ public class MainActivity extends Activity {
 
     /**
      * 启动流程（课表为主页面）：
-     *  1. 读课表缓存 → 有则立刻渲染「本周」课表，无需联网、无需登录
-     *  2. 无课表 → 显示空态，引导点「导入课表」
+     *  1. 读当前课表缓存 → 有则立刻渲染「本周」课表，无需联网、无需登录
+     *  2. 无课表 → 显示空态，引导点顶栏「导入课表」
      *  3. 同时后台加载教务页，让 Cookie 有机会自动续期
      *
      * 注意：每次启动都把 weekOffset 归零 —— 上次翻到第 5 周是临时查看行为，
      * 重进 App 应该回到本周。用户翻周只影响当次会话，不跨启动持久化。
      */
     private void tryAutoLoginThenLoad() {
-        String sched = ScheduleCache.load(this);
-        if (sched != null) {
-            try {
-                JSONObject s = new JSONObject(sched);
-                if (s.optBoolean("ok", false) && s.has("courses")) {
-                    scheduleData = s;
-                    weekOffset = 0;          // 默认显示本周
-                }
-            } catch (Exception ignored) {
-                // 缓存损坏，当作没有课表处理
-            }
-        }
+        loadCurrentSchedule();   // 内部已把 weekOffset 归零
 
         if (scheduleData != null) {
             renderSchedule();
-            statusText.setText("第 " + currentWeek() + " 周 · 课表来自本地缓存");
+            statusText.setText(ScheduleCache.currentName(this) + " · 第 " + currentWeek() + " 周");
         } else {
-            showScheduleHtml(emptyScheduleHtml());
-            applyUi(UiState.SCHEDULE_EMPTY);
-            statusText.setText("还没有课表，去「更多 → 教务处登录」导入");
+            renderSchedulePage();   // 空态文案带上当前课表的名字
         }
 
         // 后台加载登录页，让 Cookie 有机会自动续期
@@ -437,27 +437,36 @@ public class MainActivity extends Activity {
     private void applyUi(UiState state) {
         uiState = state;
         boolean room = (currentTab == TAB_CLASSROOM);
+        boolean schedule = (currentTab == TAB_SCHEDULE);
 
         // 各状态下的按钮可见性
-        boolean vRefreshData = false, vImport = false;
+        boolean vRefreshData = false, vImport = false, vMoreTop = false;
 
         switch (state) {
             case LOGIN:
             case ROOM_EMPTY:
             case ROOM_DATA:
             case BUSY:
-                // 空教室页：顶栏固定两个动作 —— 刷新空教室 + 导入课表。
-                // 四个状态下都给，是因为这页的内容可能还在加载 / 还没登录，
-                // 按钮忽隐忽现比一直放着更让人迷惑。
+                // 空教室页：只放「刷新」。导入课表已按用户要求移到课表页 —— 导入的对象是课表，
+                // 入口就该在课表页，空教室页顶栏多一个不相干的按钮反而要解释。
                 if (room) {
                     vRefreshData = true;
+                }
+                // 课表页：导入 + 更多。四个状态下都给，是因为这页的内容可能还在加载 /
+                // 还没登录，按钮忽隐忽现比一直放着更让人迷惑。
+                if (schedule) {
                     vImport = true;
+                    vMoreTop = true;
                 }
                 break;
             case SCHEDULE_EMPTY:
             case SCHEDULE_DATA:
-                // 课表页顶栏不放业务按钮：导入走「更多 → 教务处登录」，
-                // 空课表页内另有引导入口，顶栏再放一个只会重复
+                // 课表页顶栏两个动作：导入课表（重新抓取 / 换学期）+ 更多（课表设置面板）。
+                // 空课表时也要给导入 —— 这正是最需要导入的时候。
+                if (schedule) {
+                    vImport = true;
+                    vMoreTop = true;
+                }
                 break;
             case MORE:
                 // 更多页是设置列表，顶栏不放业务按钮，避免和页面内的按钮打架
@@ -469,11 +478,13 @@ public class MainActivity extends Activity {
 
         btnRefreshData.setVisibility(vRefreshData ? View.VISIBLE : View.GONE);
         btnImportTop.setVisibility(vImport ? View.VISIBLE : View.GONE);
+        btnMoreTop.setVisibility(vMoreTop ? View.VISIBLE : View.GONE);
 
         // 忙碌时禁用可点的按钮，避免重复触发
         boolean busy = (state == UiState.BUSY);
         btnRefreshData.setEnabled(!busy);
         btnImportTop.setEnabled(!busy);
+        btnMoreTop.setEnabled(!busy);
     }
 
     /**
@@ -1293,9 +1304,9 @@ public class MainActivity extends Activity {
         morePage = findViewById(R.id.morePage);
         morePage.findViewById(R.id.rowLogin).setOnClickListener(v -> {
             showLogin();
-            statusText.setText("教务系统 · 登录后回「更多」导入课表");
+            statusText.setText("教务系统 · 登录后回课表页点「导入课表」");
         });
-        morePage.findViewById(R.id.rowImport).setOnClickListener(v -> startScheduleImport());
+        morePage.findViewById(R.id.rowAddSchedule).setOnClickListener(v -> addSchedule());
         morePage.findViewById(R.id.rowCache).setOnClickListener(v -> showCacheManager());
         morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openWebTable(WEB_CH1));
         morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openWebTable(WEB_CH2));
@@ -1330,22 +1341,21 @@ public class MainActivity extends Activity {
         }
         tvVer.setText("版本 " + (ver.isEmpty() ? "-" : ver));
 
-        // 导入课表这一行的文案随有没有课表变化
+        // 添加课表这一行：说清楚现在有几张、正在用哪张 ——
+        // 不然用户点进去才发现自己早就建过好几张表了
         boolean hasSchedule = (scheduleData != null || ScheduleCache.load(this) != null);
-        TextView subImport = morePage.findViewById(R.id.subImport);
-        subImport.setText(hasSchedule
-                ? "重新从教务抓取当前学期课表"
-                : "登录教务后从教务读取本学期课表");
-        morePage.findViewById(R.id.badgeImport)
-                .setVisibility(hasSchedule ? View.VISIBLE : View.GONE);
+        int schedCount = ScheduleCache.count(this);
+        TextView subAdd = morePage.findViewById(R.id.subAddSchedule);
+        subAdd.setText("共 " + schedCount + " 张 · 正在使用「" + ScheduleCache.currentName(this) + "」"
+                + (hasSchedule ? "" : "（还没导入内容）"));
 
         // 缓存统计
-        long schedSize = cacheFileSize("schedule.json");
-        long roomSize = cacheFileSize("cache.json");
+        long schedSize = ScheduleCache.sizeBytes(this);
+        long roomSize = ResultCache.sizeBytes(this);
         long total = Math.max(schedSize, 0) + Math.max(roomSize, 0);
         TextView subCache = morePage.findViewById(R.id.subCache);
         subCache.setText("课表 " + (schedSize >= 0 ? sizeText(schedSize) : "无")
-                + " · " + (hasSchedule ? ScheduleCache.ageText(this) : "未导入")
+                + " · " + schedCount + " 张｜" + (hasSchedule ? ScheduleCache.ageText(this) : "未导入")
                 + "　｜　空教室 " + (roomSize >= 0 ? sizeText(roomSize) : "无")
                 + " · " + (roomSize >= 0 ? ResultCache.ageText(this) : "未查询"));
         TextView subTotal = morePage.findViewById(R.id.subCacheTotal);
@@ -1359,17 +1369,6 @@ public class MainActivity extends Activity {
         if (bytes < 1024 * 1024) return String.format(Locale.CHINA, "%.1f KB", bytes / 1024.0);
         return String.format(Locale.CHINA, "%.2f MB", bytes / 1024.0 / 1024.0);
     }
-
-    /** 某个缓存文件的大小（不存在返回 -1） */
-    private long cacheFileSize(String name) {
-        File f = new File(getFilesDir(), name);
-        return f.exists() ? f.length() : -1;
-    }
-
-    private int cacheFileCount(String name) {
-        return new File(getFilesDir(), name).exists() ? 1 : 0;
-    }
-
 
     /* ---------- 缓存管理弹窗 ---------- */
 
@@ -1417,8 +1416,8 @@ public class MainActivity extends Activity {
 
     /** 把当前缓存状态刷到抽屉上（清理后原地刷新，不用关了再开） */
     private void fillCacheSheet(View sheet) {
-        long schedSize = Math.max(cacheFileSize("schedule.json"), 0);
-        long roomSize = Math.max(cacheFileSize("cache.json"), 0);
+        long schedSize = Math.max(ScheduleCache.sizeBytes(this), 0);
+        long roomSize = Math.max(ResultCache.sizeBytes(this), 0);
         long total = schedSize + roomSize;
 
         ((TextView) sheet.findViewById(R.id.cacheTotal))
@@ -1427,13 +1426,16 @@ public class MainActivity extends Activity {
         ((TextView) sheet.findViewById(R.id.cacheTotalSub))
                 .setText(items + " 项有缓存");
 
-        // 课表
+        // 课表：现在可能有好几张表，把张数写出来 ——
+        // 否则「清除全部课表」在用户眼里只是清掉一张，点下去才发现别的也没了
         boolean hasSched = schedSize > 0;
+        int schedCount = ScheduleCache.count(this);
         ((TextView) sheet.findViewById(R.id.cacheSchedSize))
                 .setText(hasSched ? sizeText(schedSize) : "无");
-        ((TextView) sheet.findViewById(R.id.cacheSchedMeta)).setText(hasSched
-                ? ScheduleCache.ageText(this) + " · " + scheduleCourseCount() + " 门课"
-                : "还没有导入过课表");
+        ((TextView) sheet.findViewById(R.id.cacheSchedMeta)).setText(!hasSched
+                ? "还没有导入过课表"
+                : schedCount + " 张课表 · " + ScheduleCache.ageText(this)
+                        + " · 当前 " + scheduleCourseCount() + " 门课");
         ((ProgressBar) sheet.findViewById(R.id.cacheSchedBar))
                 .setProgress(percent(schedSize, total));
         View schedClear = sheet.findViewById(R.id.cacheSchedClear);
@@ -1493,10 +1495,11 @@ public class MainActivity extends Activity {
     private void confirmClearAll() {
         new AlertDialog.Builder(this)
                 .setTitle("清除全部缓存？")
-                .setMessage("将删除课表缓存、空教室缓存和开学日期设置。\n"
+                .setMessage("将删除全部课表（含多张课表）、空教室缓存和开学日期设置。\n"
                         + "课表需要重新导入，空教室需要重新查询。")
                 .setPositiveButton("清除", (d, w) -> {
                     ScheduleCache.clear(this);
+                    AdjustCache.clear(this);   // 调课记录跟着课表一起没，留着就是孤儿数据
                     ResultCache.clear(this);
                     scheduleData = null;
                     weekOffset = 0;
@@ -1507,26 +1510,44 @@ public class MainActivity extends Activity {
                     }
                     e.apply();
                     Toast.makeText(this, "缓存已全部清除", Toast.LENGTH_SHORT).show();
-                    refreshMorePage();
+                    loadCurrentSchedule();
+                    renderSchedulePage();
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
+    /**
+     * 清除课表缓存。
+     *
+     * 多课表之后这个动作会一次删掉全部张数，破坏面比原来大得多，
+     * 所以先弹一次确认并把张数写进问题里 —— 原来是一点就清，太轻了。
+     */
     private void clearScheduleCache() {
-        if (cacheFileSize("schedule.json") < 0) {
+        if (ScheduleCache.sizeBytes(this) < 0) {
             Toast.makeText(this, "没有课表缓存", Toast.LENGTH_SHORT).show();
             return;
         }
-        ScheduleCache.clear(this);
-        scheduleData = null;
-        weekOffset = 0;
-        Toast.makeText(this, "课表缓存已清除", Toast.LENGTH_SHORT).show();
-        refreshMorePage();
+        int n = ScheduleCache.count(this);
+        new AlertDialog.Builder(this)
+                .setTitle("清除全部课表？")
+                .setMessage("本机共有 " + n + " 张课表，将全部删除（教务系统上的课表不受影响）。\n"
+                        + "之后需要重新导入。")
+                .setPositiveButton("清除", (d, w) -> {
+                    ScheduleCache.clear(this);
+                    AdjustCache.clear(this);
+                    scheduleData = null;
+                    weekOffset = 0;
+                    Toast.makeText(this, "课表缓存已清除", Toast.LENGTH_SHORT).show();
+                    loadCurrentSchedule();
+                    renderSchedulePage();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private void clearRoomCache() {
-        if (cacheFileSize("cache.json") < 0) {
+        if (ResultCache.sizeBytes(this) < 0) {
             Toast.makeText(this, "没有空教室缓存", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -1551,10 +1572,14 @@ public class MainActivity extends Activity {
         sb.append("机型：").append(android.os.Build.MANUFACTURER).append(" ")
                 .append(android.os.Build.MODEL).append("\n");
         sb.append("──── 缓存 ────\n");
-        long s = cacheFileSize("schedule.json");
-        long r = cacheFileSize("cache.json");
+        long s = ScheduleCache.sizeBytes(this);
+        long r = ResultCache.sizeBytes(this);
         sb.append("课表缓存：").append(s >= 0 ? sizeText(s) + "，" + ScheduleCache.ageText(this) : "无")
                 .append("\n");
+        sb.append("课表张数：").append(ScheduleCache.count(this))
+                .append("（当前「").append(ScheduleCache.currentName(this)).append("」）\n");
+        sb.append("调课记录：").append(AdjustCache.count(this, ScheduleCache.currentId(this)))
+                .append(" 条（仅统计当前课表）\n");
         sb.append("空教室缓存：").append(r >= 0 ? sizeText(r) + "，" + ResultCache.ageText(this) : "无")
                 .append("\n");
         if (scheduleData != null) {
@@ -1583,13 +1608,20 @@ public class MainActivity extends Activity {
         String msg = "1. 首次使用\n"
                 + "   更多 → 教务处登录 → 登录统一身份认证（学校账号，App 不保存密码）。\n\n"
                 + "2. 导入课表\n"
-                + "   登录后回本页点「导入课表」，选学期即可；首次需选开学日期以便推算周次。\n\n"
+                + "   登录后切到「课表」，点右上角 ⤓ 导入课表，选学期即可；"
+                + "首次需选开学日期以便推算周次。\n\n"
                 + "3. 查空教室\n"
                 + "   底部「空教室」→ 顶栏刷新图标 → 选今天还是 7 天。也可在课表里直接点空白格子，"
                 + "只查那一组时段。\n\n"
-                + "4. 换学期 / 改开学日期\n"
-                + "   点课表顶部「第 N 周」即可重设开学日期；换学期请到「更多 → 导入课表」重选。\n\n"
-                + "5. 数据在哪\n"
+                + "4. 换学期 / 多张课表\n"
+                + "   课表页右上角 ⋮ 打开「课表设置」：拖动滑杆跳周、切换 / 删除课表、添加新课表。"
+                + "多张课表分别缓存在本机，互不覆盖。\n\n"
+                + "5. 调课\n"
+                + "   老师临时挪课 / 换教室 / 某周停课时，课表页右上角 ⋮ → 调课："
+                + "选课程、改到新的时间即可，可只调一周或整学期。只改本机显示，随时可撤销。\n\n"
+                + "6. 改开学日期\n"
+                + "   点课表顶部「第 N 周」即可重设开学日期。\n\n"
+                + "7. 数据在哪\n"
                 + "   课表与空教室结果都缓存在手机本地，断网也能看。可在「更多 → 缓存管理」里清除。";
         new AlertDialog.Builder(this)
                 .setTitle("使用说明")
@@ -1776,10 +1808,13 @@ public class MainActivity extends Activity {
         } else {
             if (scheduleData != null) {
                 renderSchedule();
+                statusText.setText(ScheduleCache.currentName(this)
+                        + " · 第 " + currentWeek() + " 周");
             } else {
                 showScheduleHtml(emptyScheduleHtml());
                 applyUi(UiState.SCHEDULE_EMPTY);
-                statusText.setText("还没有课表，去「更多 → 教务处登录」导入");
+                statusText.setText("「" + ScheduleCache.currentName(this)
+                        + "」还没有内容，点右上角导入课表");
             }
         }
     }
@@ -1810,8 +1845,9 @@ public class MainActivity extends Activity {
         } else {
             renderSchedule();
         }
-        statusText.setText("课表已导入 · 共 " + courseCount + " 门课"
-                + (extra == null ? "" : extra));
+        statusText.setText("「" + ScheduleCache.currentName(this) + "」已导入 · "
+                + courseCount + " 门课" + (extra == null ? "" : extra));
+        refreshMorePage();
     }
 
     /**
@@ -2017,6 +2053,600 @@ public class MainActivity extends Activity {
         statusText.setText("已回到本周 · 第 " + currentWeek() + " 周");
     }
 
+    /* ==================== 多张课表 / 课表设置面板 ==================== */
+
+    /** 把「当前课表」从缓存读进内存（只改内存，不动界面） */
+    private void loadCurrentSchedule() {
+        scheduleData = null;
+        weekOffset = 0;
+        String raw = ScheduleCache.load(this);
+        if (raw == null) return;
+        try {
+            JSONObject o = new JSONObject(raw);
+            if (o.optBoolean("ok", false) && o.has("courses")) scheduleData = o;
+        } catch (Exception ignored) {
+            // 缓存损坏，当作没有课表处理
+        }
+    }
+
+    /**
+     * 按内存里的 scheduleData 重画课表页。
+     *
+     * 停在别的 Tab 上时不碰视图 —— 否则会在用户正看着「更多」的时候把他甩到课表页；
+     * 但「更多」页上的张数 / 文案还是要刷新，那两个数字已经过期了。
+     */
+    private void renderSchedulePage() {
+        String name = ScheduleCache.currentName(this);
+        if (currentTab == TAB_SCHEDULE) {
+            if (scheduleData != null) {
+                renderSchedule();
+                statusText.setText(name + " · 第 " + currentWeek() + " 周"
+                        + (weekOffset == 0 ? "" : "（手动翻周中）"));
+            } else {
+                showScheduleHtml(emptyScheduleHtml());
+                applyUi(UiState.SCHEDULE_EMPTY);
+                statusText.setText("「" + name + "」还没有内容，点右上角导入课表");
+            }
+        }
+        refreshMorePage();
+    }
+
+    /**
+     * 课表设置面板：周数滑杆 + 课表列表 + 调课 / 添加课表。
+     *
+     * 入口是课表页顶栏的 ⋮。切换课表之所以放在这里而不是「更多」页，
+     * 是因为它和「上周 / 下周」一样属于课表自身的操作 —— 用户改课表时
+     * 视线和手指都在课表页上，不该先切到设置页再切回来。
+     */
+    private void showSchedulePanel() {
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_schedule, null);
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(sheet);
+        Window win = dialog.getWindow();
+        if (win != null) {
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            win.setGravity(Gravity.BOTTOM);
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+
+        syncScheduleSheet(sheet, dialog);
+
+        sheet.findViewById(R.id.schedClose).setOnClickListener(v -> dialog.dismiss());
+        sheet.findViewById(R.id.schedAdd).setOnClickListener(v -> {
+            dialog.dismiss();
+            addSchedule();
+        });
+        sheet.findViewById(R.id.schedAdjust).setOnClickListener(v -> {
+            if (scheduleData == null) {
+                Toast.makeText(this, "先导入课表才能调课", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dialog.dismiss();
+            showAdjustSheet(currentWeek());
+        });
+
+        final View now = sheet.findViewById(R.id.schedNow);
+        now.setOnClickListener(v -> {
+            if (weekOffset == 0) return;
+            weekOffset = 0;
+            syncScheduleSheet(sheet, dialog);
+            renderSchedule();
+            statusText.setText(ScheduleCache.currentName(this) + " · 第 " + currentWeek() + " 周");
+        });
+
+        // 拖动时实时重绘：面板只占下半屏，上面的课表还看得见，
+        // 松手才更新的话用户没法边拖边找「第几周」
+        SeekBar bar = sheet.findViewById(R.id.schedSeek);
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar sb, int value, boolean fromUser) {
+                if (!fromUser || schedSyncing) return;
+                int target = Math.max(1, value);
+                weekOffset += target - currentWeek();   // 让 currentWeek() 正好落在目标周
+                renderSchedule();
+                updateWeekLabel(sheet);
+                now.setVisibility(weekOffset == 0 ? View.GONE : View.VISIBLE);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar sb) {
+            }
+        });
+
+        dialog.show();
+    }
+
+    /**
+     * 把课表仓库的现状刷到面板上：周数滑杆 / 周次文字 / 课表卡片列表。
+     * 切换、删除、调课之后都调它原地刷新，不用关了面板再开。
+     */
+    private void syncScheduleSheet(View sheet, Dialog dialog) {
+        SeekBar bar = sheet.findViewById(R.id.schedSeek);
+        int max = maxWeekOfView();
+        bar.setMax(max);
+        // setProgress 会回调上面的监听器，先挡住，否则打开面板就相当于用户拖了一下
+        schedSyncing = true;
+        bar.setProgress(Math.max(1, Math.min(currentWeek(), max)));
+        schedSyncing = false;
+        bar.setEnabled(scheduleData != null);
+
+        updateWeekLabel(sheet);
+        sheet.findViewById(R.id.schedNow)
+                .setVisibility(weekOffset == 0 ? View.GONE : View.VISIBLE);
+        sheet.findViewById(R.id.schedAdjust).setEnabled(scheduleData != null);
+
+        List<ScheduleCache.Meta> metas = ScheduleCache.list(this);
+        ((TextView) sheet.findViewById(R.id.schedCount)).setText("共 " + metas.size() + " 张");
+
+        // 各张表各有多少条调课：一次性读完整份记录再分组，
+        // 免得每张卡片都去读一遍文件
+        Map<String, Integer> adjPerSched = new HashMap<>();
+        for (AdjustCache.Adjust a : AdjustCache.list(this, null)) {
+            Integer n = adjPerSched.get(a.schedId);
+            adjPerSched.put(a.schedId, (n == null ? 0 : n) + 1);
+        }
+
+        LinearLayout list = sheet.findViewById(R.id.schedList);
+        list.removeAllViews();
+        final String cur = ScheduleCache.currentId(this);
+        boolean canDelete = metas.size() > 1;
+        LayoutInflater inf = LayoutInflater.from(this);
+        for (final ScheduleCache.Meta m : metas) {
+            final boolean on = m.id.equals(cur);
+            View row = inf.inflate(R.layout.item_schedule_card, list, false);
+            row.setBackgroundResource(on ? R.drawable.sched_card_on : R.drawable.sched_card_off);
+            ((TextView) row.findViewById(R.id.schedCardName)).setText(m.name);
+            Integer n = adjPerSched.get(m.id);
+            ((TextView) row.findViewById(R.id.schedCardMeta))
+                    .setText(scheduleMetaText(m, n == null ? 0 : n));
+            row.findViewById(R.id.schedCardBadge).setVisibility(on ? View.VISIBLE : View.GONE);
+
+            View del = row.findViewById(R.id.schedCardDel);
+            del.setVisibility(canDelete ? View.VISIBLE : View.GONE);
+            del.setOnClickListener(v -> confirmDeleteSchedule(sheet, dialog, m));
+
+            row.setOnClickListener(v -> {
+                if (!on) switchTo(m.id);
+                dialog.dismiss();
+            });
+            list.addView(row);
+        }
+    }
+
+    /** 课表卡片副标题：空槽位说清「还没内容」，有内容的给出学期 / 门数 / 更新时间 */
+    private String scheduleMetaText(ScheduleCache.Meta m, int adjCount) {
+        if (m.isEmpty()) return "空课表 · 去课表页点右上角「导入课表」抓取";
+        StringBuilder sb = new StringBuilder();
+        // 名字是导入时自动填的学期名时就不用再说一遍，否则会重复成「2026 秋 · 2026 秋」
+        if (!m.termName.isEmpty() && !m.termName.equals(m.name)) {
+            sb.append(m.termName).append(" · ");
+        }
+        sb.append(m.courseCount).append(" 门课");
+        sb.append(" · ").append(ScheduleCache.ageText(System.currentTimeMillis() - m.savedAt));
+        if (adjCount > 0) sb.append(" · ").append(adjCount).append(" 条调课");
+        return sb.toString();
+    }
+
+    /** 周次文字 + 起止日期（当前课表为空时不显示周次，免得给出无意义的「第 1 周」） */
+    private void updateWeekLabel(View sheet) {
+        TextView wv = sheet.findViewById(R.id.schedWeekText);
+        TextView sub = sheet.findViewById(R.id.schedWeekSub);
+        if (scheduleData == null) {
+            wv.setText("—");
+            sub.setText("当前课表还没有内容，先导入");
+            return;
+        }
+        int week = currentWeek();
+        wv.setText("第 " + week + " 周");
+        String sid = scheduleData.optString("semesterId", "");
+        sub.setText(termStartMs(sid) > 0 ? dateStr(weekMonday(week)) + " 起" : "还没设置开学日期");
+    }
+
+    /** 滑杆上界：课表里出现过的最大周次；没有周次信息时按 20 周算 */
+    private int maxWeekOfView() {
+        int max = 0;
+        if (scheduleData != null) {
+            JSONArray cs = scheduleData.optJSONArray("courses");
+            if (cs != null) {
+                for (int i = 0; i < cs.length(); i++) {
+                    JSONObject c = cs.optJSONObject(i);
+                    JSONArray ws = c == null ? null : c.optJSONArray("weeks");
+                    if (ws == null) continue;
+                    for (int k = 0; k < ws.length(); k++) max = Math.max(max, ws.optInt(k, 0));
+                }
+            }
+        }
+        if (max <= 0) max = 20;
+        return Math.max(max, currentWeek());
+    }
+
+    /** 切换到某张课表：设为当前 + 重读缓存 + 切到课表页 */
+    private void switchTo(String id) {
+        ScheduleCache.select(this, id);
+        loadCurrentSchedule();
+        if (currentTab == TAB_SCHEDULE) {
+            renderSchedulePage();
+        } else {
+            switchTab(TAB_SCHEDULE);
+        }
+        Toast.makeText(this, "已切换到「" + ScheduleCache.currentName(this) + "」",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /** 删除一张课表：只删本机缓存，连带把它的调课记录一起带走 */
+    private void confirmDeleteSchedule(final View sheet, final Dialog dialog,
+                                       final ScheduleCache.Meta m) {
+        final String before = ScheduleCache.currentId(this);
+        new AlertDialog.Builder(this)
+                .setTitle("删除「" + m.name + "」？")
+                .setMessage("只删除本机缓存，教务系统上的课表不受影响。")
+                .setPositiveButton("删除", (d, w) -> {
+                    if (!ScheduleCache.remove(this, m.id)) {
+                        Toast.makeText(this, "至少要留一张课表", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    AdjustCache.removeSched(this, m.id);
+                    if (m.id.equals(before)) loadCurrentSchedule();
+                    renderSchedulePage();
+                    syncScheduleSheet(sheet, dialog);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /**
+     * 添加课表：新建一张空课表并切过去。
+     *
+     * 为什么不直接开始导入：一张课表的名字（本学期 / 下学期 / 同学的）是用户的语义。
+     * 先把槽位建出来、名字定下来，再点「导入课表」填内容，多张表之间的边界才清楚；
+     * 万一导入失败，也不会在半路上把原来那张表的内容覆盖掉。
+     */
+    private void addSchedule() {
+        final EditText input = new EditText(this);
+        int pad = (int) (getResources().getDisplayMetrics().density * 16);
+        input.setPadding(pad, pad / 2, pad, pad / 2);
+        input.setText("课表 " + (ScheduleCache.count(this) + 1));
+        input.setSelection(input.getText().length());   // 默认名可直接覆盖，不用先删
+        input.setHint("例如：2026 秋季 / 同学的课表");
+
+        new AlertDialog.Builder(this)
+                .setTitle("添加课表")
+                .setMessage("新建一张空白课表，之后在课表页点右上角「导入课表」抓取内容。")
+                .setView(input)
+                .setPositiveButton("创建", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) name = "课表 " + ScheduleCache.count(this);
+                    ScheduleCache.add(this, name);
+                    loadCurrentSchedule();
+                    switchTab(TAB_SCHEDULE);
+                    renderSchedulePage();
+                    Toast.makeText(this, "已新建「" + name + "」，点右上角导入课表",
+                            Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /* ==================== 调课 ==================== */
+
+    /**
+     * 调课面板。
+     *
+     * 现实里的课表和教务系统里那套经常对不上：老师临时把周四的课挪到周六、
+     * 换教室、某一周停课，教务不一定会更新。这里做的是**本地覆盖**：
+     * 只改本机显示，不回写教务，也不申请什么，所见即所得。
+     *
+     * @param week 作用周次 —— 就是打开面板时课表停在哪一周
+     */
+    private void showAdjustSheet(final int week) {
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_adjust, null);
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(sheet);
+        Window win = dialog.getWindow();
+        if (win != null) {
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            win.setGravity(Gravity.BOTTOM);
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+
+        final String schedId = ScheduleCache.currentId(this);
+        ((TextView) sheet.findViewById(R.id.adjWeekHint))
+                .setText("第 " + week + " 周 · " + dateStr(weekMonday(week)) + " 起 · 当前课表「"
+                        + ScheduleCache.currentName(this) + "」");
+
+        final List<JSONObject> weekCourses = coursesOfWeek(week);
+        final String[] keys = new String[weekCourses.size()];
+        for (int i = 0; i < weekCourses.size(); i++) keys[i] = courseKey(weekCourses.get(i));
+
+        final Spinner courseSp = sheet.findViewById(R.id.adjCourse);
+        final Spinner daySp = sheet.findViewById(R.id.adjDay);
+        final Spinner startSp = sheet.findViewById(R.id.adjSeStart);
+        final Spinner endSp = sheet.findViewById(R.id.adjSeEnd);
+
+        String[] days = new String[7];
+        for (int i = 0; i < 7; i++) days[i] = "周" + WD_CN[i];
+        String[] sections = new String[PERIODS];
+        for (int i = 0; i < PERIODS; i++) sections[i] = "第 " + (i + 1) + " 节";
+        daySp.setAdapter(spinnerAdapter(days));
+        startSp.setAdapter(spinnerAdapter(sections));
+        endSp.setAdapter(spinnerAdapter(sections));
+
+        fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
+
+        // 换一门课就把 ② 预填成它当前生效的位置，用户只需改要变的那一项
+        courseSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position < 0 || position >= weekCourses.size()) return;
+                prefillAdjustTarget(sheet, weekCourses.get(position),
+                        findEffective(schedId, keys[position], week));
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+        sheet.findViewById(R.id.adjClose).setOnClickListener(v -> dialog.dismiss());
+
+        // 确认调课
+        sheet.findViewById(R.id.adjConfirm).setOnClickListener(v -> {
+            int i = courseSp.getSelectedItemPosition();
+            if (i < 0 || i >= weekCourses.size()) {
+                Toast.makeText(this, "先选一门课", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            JSONObject c = weekCourses.get(i);
+            boolean all = ((RadioButton) sheet.findViewById(R.id.adjScopeAll)).isChecked();
+
+            AdjustCache.Adjust a = new AdjustCache.Adjust();
+            a.schedId = schedId;
+            a.courseKey = keys[i];
+            a.name = c.optString("name", "");
+            a.scope = all ? AdjustCache.SCOPE_ALL : AdjustCache.SCOPE_WEEK;
+            a.week = week;
+            a.day = daySp.getSelectedItemPosition() + 1;
+            a.startSection = startSp.getSelectedItemPosition() + 1;
+            a.endSection = endSp.getSelectedItemPosition() + 1;
+            if (a.endSection < a.startSection) a.endSection = a.startSection;
+            a.room = ((EditText) sheet.findViewById(R.id.adjRoom)).getText().toString().trim();
+            a.srcDay = c.optInt("day", 0);
+            a.srcStart = c.optInt("startSection", 0);
+            a.srcEnd = c.optInt("endSection", a.srcStart);
+            a.srcRoom = c.optString("position", "");
+            a.createdAt = System.currentTimeMillis();
+
+            // 调回原位（同一天、同起始节、教室也没改）等于没调：
+            // 直接删掉这条记录，而不是留一条「自己调到自己」的废记录
+            if (a.day == a.srcDay && a.startSection == a.srcStart
+                    && (a.room.isEmpty() || a.room.equals(a.srcRoom))) {
+                AdjustCache.removeOne(this, schedId, keys[i], a.scope, week);
+                Toast.makeText(this, "已恢复原本的时间", Toast.LENGTH_SHORT).show();
+            } else {
+                AdjustCache.put(this, a);
+                Toast.makeText(this, "已调课：" + a.name + " → 周" + WD_CN[a.day - 1]
+                        + " " + a.startSection + "-" + a.endSection + " 节", Toast.LENGTH_LONG).show();
+            }
+            renderSchedule();
+            fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
+        });
+
+        // 停课
+        sheet.findViewById(R.id.adjCancelWeek).setOnClickListener(v -> {
+            int i = courseSp.getSelectedItemPosition();
+            if (i < 0 || i >= weekCourses.size()) {
+                Toast.makeText(this, "先选一门课", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            JSONObject c = weekCourses.get(i);
+            boolean all = ((RadioButton) sheet.findViewById(R.id.adjScopeAll)).isChecked();
+
+            AdjustCache.Adjust a = new AdjustCache.Adjust();
+            a.schedId = schedId;
+            a.courseKey = keys[i];
+            a.name = c.optString("name", "");
+            a.scope = all ? AdjustCache.SCOPE_ALL : AdjustCache.SCOPE_WEEK;
+            a.week = week;
+            a.day = 0;                      // day <= 0 表示停课
+            a.srcDay = c.optInt("day", 0);
+            a.srcStart = c.optInt("startSection", 0);
+            a.srcEnd = c.optInt("endSection", a.srcStart);
+            a.srcRoom = c.optString("position", "");
+            a.createdAt = System.currentTimeMillis();
+
+            AdjustCache.put(this, a);
+            Toast.makeText(this, "已标记停课：" + a.name
+                            + (all ? "（之后每周都不排）" : "（仅第 " + week + " 周）"),
+                    Toast.LENGTH_LONG).show();
+            renderSchedule();
+            fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
+        });
+
+        dialog.show();
+    }
+
+    /**
+     * 刷新调课面板：① 课程选择器 + 底部「已有记录」列表。
+     *
+     * @param keys 与 weekCourses 一一对应的课程键（在外面算好，避免每次重算）
+     */
+    private void fillAdjustSheet(View sheet, int week, String schedId,
+                                 List<JSONObject> weekCourses, String[] keys) {
+        Spinner courseSp = sheet.findViewById(R.id.adjCourse);
+        boolean has = !weekCourses.isEmpty();
+        courseSp.setVisibility(has ? View.VISIBLE : View.GONE);
+        sheet.findViewById(R.id.adjEmpty).setVisibility(has ? View.GONE : View.VISIBLE);
+        sheet.findViewById(R.id.adjConfirm).setEnabled(has);
+        sheet.findViewById(R.id.adjCancelWeek).setEnabled(has);
+
+        if (has) {
+            int keep = Math.max(0, courseSp.getSelectedItemPosition());
+            String[] labels = new String[weekCourses.size()];
+            for (int i = 0; i < weekCourses.size(); i++) {
+                labels[i] = courseLabel(weekCourses.get(i),
+                        findEffective(schedId, keys[i], week));
+            }
+            courseSp.setAdapter(spinnerAdapter(labels));
+            courseSp.setSelection(Math.min(keep, weekCourses.size() - 1));
+        }
+
+        // 已有记录：调课是临时动作，用户最需要的是一条条改回去的能力
+        List<AdjustCache.Adjust> all = AdjustCache.list(this, schedId);
+        LinearLayout list = sheet.findViewById(R.id.adjList);
+        list.removeAllViews();
+        sheet.findViewById(R.id.adjListTitle)
+                .setVisibility(all.isEmpty() ? View.GONE : View.VISIBLE);
+        LayoutInflater inf = LayoutInflater.from(this);
+        for (final AdjustCache.Adjust a : all) {
+            View row = inf.inflate(R.layout.item_adjust_row, list, false);
+            ((TextView) row.findViewById(R.id.adjRowText)).setText(adjustText(a));
+            row.findViewById(R.id.adjRowUndo).setOnClickListener(v -> {
+                AdjustCache.remove(this, a.id);
+                Toast.makeText(this, "已撤销该调课", Toast.LENGTH_SHORT).show();
+                renderSchedule();
+                fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
+            });
+            list.addView(row);
+        }
+    }
+
+    /** 某门课在指定周实际生效的调课记录（没有则 null） */
+    private AdjustCache.Adjust findEffective(String schedId, String courseKey, int week) {
+        for (AdjustCache.Adjust a : AdjustCache.forWeek(this, schedId, week)) {
+            if (a.courseKey.equals(courseKey)) return a;
+        }
+        return null;
+    }
+
+    /** 选中某门课后，把「调到」那组控件预填成它当前生效的位置 */
+    private void prefillAdjustTarget(View sheet, JSONObject c, AdjustCache.Adjust a) {
+        int day, sb, se;
+        String room;
+        boolean cancelled = false;
+        if (a == null) {
+            day = c.optInt("day", 1);
+            sb = c.optInt("startSection", 1);
+            se = c.optInt("endSection", sb);
+            room = c.optString("position", "");
+        } else if (a.isCancelled()) {
+            // 已停课的课没有「调整后位置」，用原位置填，用户改完就是恢复
+            cancelled = true;
+            day = a.srcDay;
+            sb = a.srcStart;
+            se = a.srcEnd;
+            room = a.srcRoom;
+        } else {
+            day = a.day;
+            sb = a.startSection;
+            se = a.endSection;
+            room = a.room.isEmpty() ? a.srcRoom : a.room;
+        }
+        day = clamp(day, 1, 7);
+        sb = clamp(sb, 1, PERIODS);
+        se = clamp(se, sb, PERIODS);
+
+        ((Spinner) sheet.findViewById(R.id.adjDay)).setSelection(day - 1);
+        ((Spinner) sheet.findViewById(R.id.adjSeStart)).setSelection(sb - 1);
+        ((Spinner) sheet.findViewById(R.id.adjSeEnd)).setSelection(se - 1);
+        EditText roomEt = sheet.findViewById(R.id.adjRoom);
+        roomEt.setText(room);
+        roomEt.setSelection(roomEt.getText().length());
+
+        // 已有「每周」记录时默认选中「之后每周」：用户多半是在改那一条
+        boolean all = (a != null && !cancelled && AdjustCache.SCOPE_ALL.equals(a.scope));
+        ((RadioButton) sheet.findViewById(R.id.adjScopeAll)).setChecked(all);
+        ((RadioButton) sheet.findViewById(R.id.adjScopeWeek)).setChecked(!all);
+    }
+
+    /** 这一周实际要上的课（按周次过滤），按 星期 + 起始节 排序，和课表上的顺序一致 */
+    private List<JSONObject> coursesOfWeek(int week) {
+        List<JSONObject> out = new ArrayList<>();
+        if (scheduleData == null) return out;
+        JSONArray cs = scheduleData.optJSONArray("courses");
+        if (cs == null) return out;
+        for (int i = 0; i < cs.length(); i++) {
+            JSONObject c = cs.optJSONObject(i);
+            if (c == null) continue;
+            if (!inWeek(c.optJSONArray("weeks"), week)) continue;
+            out.add(c);
+        }
+        Collections.sort(out, (a, b) -> {
+            int d = a.optInt("day", 0) - b.optInt("day", 0);
+            return d != 0 ? d : a.optInt("startSection", 0) - b.optInt("startSection", 0);
+        });
+        return out;
+    }
+
+    /**
+     * 课程的唯一键 —— 把调课记录匹配回课程用。
+     *
+     * 用「课名 + 原星期 + 原起止节」，不用数组下标：重新导入课表后顺序可能变，
+     * 下标会串到别的课上；而这四个字段描述的就是同一条排课记录，重导入后依然对得上。
+     */
+    private static String courseKey(JSONObject c) {
+        int st = c.optInt("startSection", 0);
+        return c.optString("name", "") + "|" + c.optInt("day", 0) + "|" + st + "|"
+                + c.optInt("endSection", st);
+    }
+
+    /** 选择器里的一行：位置 · 课名 · 教室（已经调过课的显示新位置并标注） */
+    private String courseLabel(JSONObject c, AdjustCache.Adjust a) {
+        int day = c.optInt("day", 1);
+        int sb = c.optInt("startSection", 1);
+        int se = c.optInt("endSection", sb);
+        String room = c.optString("position", "");
+        String suffix = "";
+        if (a != null) {
+            if (a.isCancelled()) {
+                suffix = "（已停课）";
+            } else {
+                day = a.day;
+                sb = a.startSection;
+                se = a.endSection;
+                if (!a.room.isEmpty()) room = a.room;
+                suffix = "（已调课）";
+            }
+        }
+        StringBuilder sb2 = new StringBuilder();
+        sb2.append("周").append(wdCn(day)).append(" ").append(sb).append("-").append(se)
+                .append(" 节 · ").append(c.optString("name", ""));
+        if (!room.isEmpty()) sb2.append(" · ").append(room);
+        return sb2.append(suffix).toString();
+    }
+
+    /** 已有记录的一句话描述：「每周 · 高等数学：原 周四 3-4 节 → 周六 5-6 节」 */
+    private String adjustText(AdjustCache.Adjust a) {
+        String scope = AdjustCache.SCOPE_ALL.equals(a.scope) ? "每周" : "第 " + a.week + " 周";
+        String from = "周" + wdCn(a.srcDay) + " " + a.srcStart + "-" + a.srcEnd + " 节";
+        if (a.isCancelled()) return scope + " · " + a.name + "（原 " + from + "）停课";
+        String to = "周" + wdCn(a.day) + " " + a.startSection + "-" + a.endSection + " 节";
+        return scope + " · " + a.name + "：原 " + from + " → " + to
+                + (a.room.isEmpty() ? "" : "（" + a.room + "）");
+    }
+
+    private static String wdCn(int day) {
+        return (day >= 1 && day <= 7) ? WD_CN[day - 1] : "?";
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    private ArrayAdapter<String> spinnerAdapter(String[] items) {
+        ArrayAdapter<String> ad = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, items);
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        return ad;
+    }
+
     private void renderSchedule() {
         if (scheduleData == null) return;
         try {
@@ -2033,18 +2663,20 @@ public class MainActivity extends Activity {
     }
 
     private String emptyScheduleHtml() {
+        String name = ScheduleCache.currentName(this);
         return "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<style>" + scheduleCss + "</style></head><body>"
                 + "<h1>我的课表</h1>"
-                + "<div class=\"empty\"><b>还没有课表</b>"
+                + "<div class=\"empty\"><b>「" + esc(name) + "」还没有内容</b>"
                 + "登录教务处后即可导入本学期课表<br>导入一次即可长期离线查看"
                 // 引导入口：直接在这里把「登录并导入」摆出来，
-                // 用户不用先自己摸到底部「更多」里去找
+                // 用户不用先自己摸到顶栏那个图标是干什么的
                 + "<button class=\"guide\" onclick=\"AndroidResultHost.guideImportSchedule()\">"
                 + "登录教务处并导入课表</button></div>"
-                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」进入。"
-                + "课表只从你本人已登录的教务会话读取，保存在手机本地，不会上传。</p>"
+                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」先登录。"
+                + "多张课表可用课表页右上角 ⋮ 添加与切换；课表只从你本人已登录的教务会话读取，"
+                + "保存在手机本地，不会上传。</p>"
                 + "</body></html>";
     }
 
@@ -2070,6 +2702,21 @@ public class MainActivity extends Activity {
                 + "</body></html>";
     }
 
+    /** 调课在原位置留下的「影子」：告诉用户这节课去哪了 / 为什么不见了 */
+    private static final class Ghost {
+        final String name;
+        final String text;
+        final int span;
+        final boolean cancelled;
+
+        Ghost(String name, String text, int span, boolean cancelled) {
+            this.name = name;
+            this.text = text;
+            this.span = span;
+            this.cancelled = cancelled;
+        }
+    }
+
     /** 生成课表周视图 HTML */
     private String buildScheduleHtml(JSONObject o, int week) throws Exception {
         JSONArray courses = o.getJSONArray("courses");
@@ -2083,9 +2730,21 @@ public class MainActivity extends Activity {
             todayCol = (dow == Calendar.SUNDAY) ? 6 : (dow - Calendar.MONDAY);
         }
 
+        // ── 调课：本地调整 ────────────────────────────────────────────
+        // 先把「本周生效的调整」按课程键索引好，摆放时逐条套用。
+        // 调整只影响显示：教务的数据一个字节都不改，重新导入课表后记录依然有效。
+        final String schedId = ScheduleCache.currentId(this);
+        final List<AdjustCache.Adjust> adjusts = AdjustCache.forWeek(this, schedId, week);
+        Map<String, AdjustCache.Adjust> adjByKey = new HashMap<>();
+        for (AdjustCache.Adjust a : adjusts) adjByKey.put(a.courseKey, a);
+
         // 先把课程摆进网格，跨节次的用 rowspan 覆盖下方单元格
         JSONObject[][] grid = new JSONObject[PERIODS][7];
+        AdjustCache.Adjust[][] gridAdj = new AdjustCache.Adjust[PERIODS][7];
         boolean[][] covered = new boolean[PERIODS][7];
+        Ghost[][] ghost = new Ghost[PERIODS][7];
+        boolean[][] ghostCovered = new boolean[PERIODS][7];
+
         for (int i = 0; i < courses.length(); i++) {
             JSONObject c = courses.optJSONObject(i);
             if (c == null) continue;
@@ -2096,18 +2755,49 @@ public class MainActivity extends Activity {
             if (day < 1 || day > 7 || st < 1 || st > PERIODS) continue;
             if (en < st) en = st;
             if (en > PERIODS) en = PERIODS;
-            int r = st - 1, col = day - 1;
-            if (grid[r][col] == null) grid[r][col] = c;
-            for (int k = r + 1; k < en; k++) covered[k][col] = true;
+
+            AdjustCache.Adjust a = adjByKey.get(courseKey(c));
+            String name = c.optString("name", "");
+
+            if (a != null && a.isCancelled()) {
+                // 停课：原位置留一个「停课」影子，课程本身不摆
+                ghost[st - 1][day - 1] = new Ghost(name, "本周停课", en - st + 1, true);
+                continue;
+            }
+
+            int pDay = day, pSt = st, pEn = en;
+            if (a != null) {
+                pDay = clamp(a.day, 1, 7);
+                pSt = clamp(a.startSection, 1, PERIODS);
+                pEn = clamp(Math.max(a.endSection, pSt), 1, PERIODS);
+                // 摆到新位置的同时，原位置留个影子说明「这节课去哪了」。
+                // 只画一边的话用户会以为课表算错了：要么课少了一节，要么凭空多了一节。
+                ghost[st - 1][day - 1] = new Ghost(name,
+                        "已调至 周" + wdCn(pDay) + " " + pSt + "-" + pEn + " 节",
+                        en - st + 1, false);
+                if (pDay == day && pSt == st) a = null;   // 调回原位，等于没调
+            }
+
+            int r = pSt - 1, col = pDay - 1;
+            if (grid[r][col] == null) {
+                grid[r][col] = c;
+                gridAdj[r][col] = a;
+            }
+            for (int k = r + 1; k < pEn; k++) covered[k][col] = true;
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.append("<title>我的课表</title><style>").append(scheduleCss).append("</style></head><body>");
-        sb.append("<h1>我的课表</h1>");
-        sb.append("<p class=\"sub\">").append(esc(o.optString("termName", "")))
-                .append(" · 更新于 ").append(esc(o.optString("updated", ""))).append("</p>");
+        // 标题用「当前课表名」：多张课表之后，光写「我的课表」分不清在看哪一张
+        sb.append("<h1>").append(esc(ScheduleCache.currentName(this))).append("</h1>");
+        String term = o.optString("termName", "");
+        sb.append("<p class=\"sub\">");
+        if (!term.isEmpty() && !term.equals(ScheduleCache.currentName(this))) {
+            sb.append(esc(term)).append(" · ");
+        }
+        sb.append("更新于 ").append(esc(o.optString("updated", ""))).append("</p>");
 
         sb.append("<div class=\"weekbar\">")
                 .append("<button onclick=\"AndroidResultHost.prevWeek()\">‹ 上周</button>")
@@ -2146,7 +2836,38 @@ public class MainActivity extends Activity {
             for (int c = 0; c < 7; c++) {
                 if (covered[r][c]) continue;      // 已被上方 rowspan 占用
                 JSONObject co = grid[r][c];
-                if (co == null) {
+                if (co != null) {
+                    int cs = co.optInt("startSection", r + 1);
+                    int ce = co.optInt("endSection", r + 1);
+                    AdjustCache.Adjust adj = gridAdj[r][c];
+                    if (adj != null) {
+                        cs = clamp(adj.startSection, 1, PERIODS);
+                        ce = clamp(Math.max(adj.endSection, cs), 1, PERIODS);
+                    }
+                    int span = clamp(ce - cs + 1, 1, PERIODS - r);
+                    String nm = co.optString("name", "");
+                    // 调过课的卡片要显示调整后的教室，否则用户会按旧教室跑错楼
+                    String room = (adj != null && !adj.room.isEmpty())
+                            ? adj.room : co.optString("position", "");
+                    sb.append("<td class=\"cell\" rowspan=\"").append(span).append("\">")
+                            .append("<div class=\"course c").append(courseColorIdx(nm))
+                            .append(adj != null ? " adj" : "")
+                            .append("\" onclick=\"AndroidResultHost.onCourseClick(")
+                            .append(c + 1).append(",").append(cs).append(",").append(ce)
+                            .append(")\">")
+                            .append("<div class=\"nm\">").append(esc(nm)).append("</div>")
+                            .append("<div class=\"rm\">").append(esc(room)).append("</div>")
+                            .append(adj != null ? "<span class=\"tag\">调</span>" : "")
+                            .append("</div></td>");
+                } else if (ghost[r][c] != null && !ghostCovered[r][c]) {
+                    Ghost g = ghost[r][c];
+                    int span = clamp(g.span, 1, PERIODS - r);
+                    for (int k = r + 1; k < r + span; k++) ghostCovered[k][c] = true;
+                    sb.append("<td class=\"cell\" rowspan=\"").append(span).append("\">")
+                            .append("<div class=\"ghost").append(g.cancelled ? " cancel" : "")
+                            .append("\"><b>").append(esc(g.name)).append("</b>")
+                            .append("<span>").append(esc(g.text)).append("</span></div></td>");
+                } else {
                     // 没课的时段：点一下直接查这个时段的空闲教室
                     sb.append("<td class=\"cell free")
                             .append(c == todayCol ? " today" : "")
@@ -2154,28 +2875,38 @@ public class MainActivity extends Activity {
                             .append(c + 1).append(",").append(r + 1)
                             .append(")\"><span class=\"plus\">+</span>"
                                     + "<span class=\"fd\">空教室</span></div></td>");
-                } else {
-                    int cs = co.optInt("startSection", r + 1);
-                    int ce = co.optInt("endSection", r + 1);
-                    int span = ce - cs + 1;
-                    if (span < 1) span = 1;
-                    String nm = co.optString("name", "");
-                    sb.append("<td class=\"cell\" rowspan=\"").append(span).append("\">")
-                            .append("<div class=\"course c").append(courseColorIdx(nm))
-                            .append("\" onclick=\"AndroidResultHost.onCourseClick(")
-                            .append(c + 1).append(",").append(cs).append(",").append(ce)
-                            .append(")\">")
-                            .append("<div class=\"nm\">").append(esc(nm)).append("</div>")
-                            .append("<div class=\"rm\">").append(esc(co.optString("position", "")))
-                            .append("</div></div></td>");
                 }
             }
             sb.append("</tr>");
         }
         sb.append("</tbody></table></div>");
 
+        // 本周调课清单：影子可能被别的课挡住（同一格只画得下一个），
+        // 清单保证「这周改了哪些课」一定看得到，不必再去翻设置面板
+        if (!adjusts.isEmpty()) {
+            sb.append("<div class=\"adjsum\"><b>本周调课 · ").append(adjusts.size()).append(" 条</b>");
+            for (AdjustCache.Adjust a : adjusts) {
+                String scope = AdjustCache.SCOPE_ALL.equals(a.scope) ? "（每周）" : "";
+                sb.append("<div class=\"row\">· ").append(esc(a.name));
+                if (a.isCancelled()) {
+                    sb.append(" 周").append(wdCn(a.srcDay))
+                            .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
+                            .append(" 节 <b>停课</b>");
+                } else {
+                    sb.append(" 由 周").append(wdCn(a.srcDay))
+                            .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
+                            .append(" 节 → 周").append(wdCn(a.day))
+                            .append(" ").append(a.startSection).append("-").append(a.endSection)
+                            .append(" 节");
+                }
+                sb.append(scope).append("</div>");
+            }
+            sb.append("<div class=\"row hint\">在「课表设置 → 调课」里可以修改或撤销</div></div>");
+        }
+
         sb.append("<p class=\"tip\">点 <b>空白时段</b> 查这个时间的空闲教室；"
-                + "点 <b>课程卡片</b> 看课程详情。</p>");
+                + "点 <b>课程卡片</b> 看课程详情；"
+                + "老师临时挪课 / 换教室，用右上角 <b>⋮ → 调课</b> 改本地显示。</p>");
         sb.append("<p class=\"foot\">课表保存在手机本地，不会上传任何信息。</p>");
         sb.append("</body></html>");
         return sb.toString();
@@ -2306,25 +3037,55 @@ public class MainActivity extends Activity {
             hit = c;
             break;
         }
+        // 点到的是被调课后的位置 —— 原课程的 day/st/en 还在数据里，只是格子不在那。
+        // 按 courseKey 反查回原课程，再把「调课后的位置」告诉用户。
+        AdjustCache.Adjust adjHit = null;
+        if (hit == null) {
+            String schedId = ScheduleCache.currentId(this);
+            for (AdjustCache.Adjust a : AdjustCache.forWeek(this, schedId, week)) {
+                if (a.isCancelled()) continue;
+                if (a.day != day || a.startSection != st || a.endSection != en) continue;
+                for (int i = 0; i < courses.length(); i++) {
+                    JSONObject c = courses.optJSONObject(i);
+                    if (c == null) continue;
+                    if (!courseKey(c).equals(a.courseKey)) continue;
+                    if (!inWeek(c.optJSONArray("weeks"), week)) continue;
+                    hit = c;
+                    adjHit = a;
+                    break;
+                }
+                if (hit != null) break;
+            }
+        }
         if (hit == null) {
             Toast.makeText(this, "这节课本周不上", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        String t0 = slotTime(st, false), t1 = slotTime(en, true);
+        // 调课后的卡片显示的就是新位置 —— 详情里要把原位置也带上
+        int showDay = day, showSt = st, showEn = en;
+        String showRoom = (adjHit != null && !adjHit.room.isEmpty())
+                ? adjHit.room : hit.optString("position", "");
+        String t0 = slotTime(showSt, false), t1 = slotTime(showEn, true);
         StringBuilder m = new StringBuilder();
         m.append("教师：").append(nz(hit.optString("teacher", ""))).append("\n");
-        m.append("地点：").append(nz(hit.optString("position", ""))).append("\n");
-        m.append("时间：周").append(WD_CN[day - 1]).append(" 第 ").append(st)
-                .append(en > st ? "-" + en : "").append(" 节");
+        m.append("地点：").append(nz(showRoom)).append("\n");
+        m.append("时间：周").append(WD_CN[showDay - 1]).append(" 第 ").append(showSt)
+                .append(showEn > showSt ? "-" + showEn : "").append(" 节");
         if (!t0.isEmpty() && !t1.isEmpty()) m.append("  ").append(t0).append("–").append(t1);
         m.append("\n周次：").append(weeksText(hit.optJSONArray("weeks")));
+        if (adjHit != null) {
+            m.append("\n\n（这节课原是 周").append(WD_CN[adjHit.srcDay - 1])
+                    .append(" ").append(adjHit.srcStart).append("-").append(adjHit.srcEnd)
+                    .append(" 节；已通过本地「调课」调整到当前时间）");
+        }
 
+        final int qDay = showDay, qSt = showSt, qEn = showEn;
         new AlertDialog.Builder(this)
                 .setTitle(hit.optString("name", "课程"))
                 .setMessage(m.toString())
                 .setPositiveButton("仍要查该时段空教室",
-                        (d, w) -> jumpToFreeRooms(day, st, en))
+                        (d, w) -> jumpToFreeRooms(qDay, qSt, qEn))
                 .setNegativeButton("关闭", null)
                 .show();
     }

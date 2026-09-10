@@ -67,11 +67,31 @@
 
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>
+        </LinearLayout>
 
-            <View style="@style/MoreDivider" />
+        <!-- ══════════ 课表 ══════════
+             「导入课表」原在这一页，用户要求删掉：导入课表是课表页自己的事，
+             入口已经移到课表页顶栏的 ⤓ 按钮上，这里再放一个只是重复。
+             这一页只留「添加课表」—— 多张课表的管理入口。 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="6dp"
+            android:text="课表"
+            android:textSize="12sp"
+            android:textColor="#8b92a3"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:layout_marginBottom="10dp">
 
             <LinearLayout
-                android:id="@+id/rowImport"
+                android:id="@+id/rowAddSchedule"
                 style="@style/MoreRow">
 
                 <LinearLayout
@@ -82,18 +102,13 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="导入课表" />
+                        android:text="添加课表" />
 
                     <TextView
-                        android:id="@+id/subImport"
+                        android:id="@+id/subAddSchedule"
                         style="@style/MoreRowSub"
-                        android:text="登录后从教务读取本学期课表" />
+                        android:text="新建一张空白课表，可分别导入、随时切换" />
                 </LinearLayout>
-
-                <TextView
-                    android:id="@+id/badgeImport"
-                    style="@style/MoreBadgeGrey"
-                    android:text="已有课表" />
 
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  添加：加号。
+  第一张课表用「添加课表」，之后也是同一个按钮 —— 不用两套图标。
+  白色填充，由使用处 android:tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.7,4.6h2.6v6.1h6.1v2.6h-6.1v6.1h-2.6v-6.1h-6.1v-2.6h6.1z" />
+</vector>

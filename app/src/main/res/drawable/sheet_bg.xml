@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  底部抽屉的底：白色 + 上方两角圆角。
+
+  抽屉用系统 Dialog 实现（本项目零第三方依赖），窗口底色被设成全透明，
+  所以「一张白色圆角纸从底部升起来」这件事得由这张 drawable 自己完成。
+  上方两角 20dp 是参考用户给的课表截图；下面两角不圆，因为要贴住屏幕底边。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners
+        android:topLeftRadius="20dp"
+        android:topRightRadius="20dp" />
+</shape>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  调课：左右双向箭头（⇄）。
+
+  用「对调」而不是「日历/时钟」：调课的语义是把一节课从 A 挪到 B，
+  是一对位置之间的移动，双向箭头最直白。
+
+  白色填充，由使用处 android:tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 上箭头：向右 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.4,7.7h11.4l-2.9,-2.9l1.8,-1.8l5.8,5.8l-5.8,5.8l-1.8,-1.8l2.9,-2.9h-11.4z" />
+
+    <!-- 下箭头：向左 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20.6,15.3h-11.4l2.9,2.9l-1.8,1.8l-5.8,-5.8l5.8,-5.8l1.8,1.8l-2.9,2.9h11.4z" />
+</vector>

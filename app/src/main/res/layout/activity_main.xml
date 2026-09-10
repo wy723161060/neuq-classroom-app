@@ -34,16 +34,21 @@
             android:ellipsize="end" />
 
         <!--
-          空教室页顶栏的两个动作（用户要求放在空教室表上方）：
-            刷新 —— 重新查询空闲教室（没登录会先引导登录）
-            导入 —— 从教务导入课表
+          顶栏动作按钮，按 Tab 分工：
+            空教室页 —— 刷新（重新查询空闲教室，没登录会先引导登录）
+            课表页   —— 导入课表（从教务抓取）+ 更多（打开课表设置面板）
 
-          无底色 + 蓝色图标。
-          注意必须在这里用 tint 上色：两个图标本身是白色填充
-          （ic_skeu_refresh / ic_skeu_import 当年是给蓝底按钮画的），
+          「导入课表」原在空教室页，用户要求移到课表页：导入的对象是课表，
+          入口放在课表页才顺；空教室页只留「刷新」。
+
+          无底色 + 蓝色图标，三个按钮同一套写法。
+          注意必须在这里用 tint 上色：图标本身都是白色填充
+          （ic_skeu_refresh / ic_skeu_import / ic_skeu_more 当年都按蓝底按钮画的），
           去掉底板之后不 tint 就是白底白图标，肉眼完全看不见。
           也不能改 vector 的 fillColor —— ic_skeu_refresh 还被
-          内嵌浏览器标题栏的「刷新网页」按钮复用，那里是蓝底白图标。
+          内嵌浏览器标题栏的「刷新网页」按钮复用。
+
+          ⋮ 放最右：和参考截图一致，也是「越靠右越像菜单」的通用习惯。
         -->
         <ImageButton
             android:id="@+id/btnRefreshData"
@@ -67,6 +72,18 @@
             android:tint="#1B4D8F"
             android:scaleType="centerInside"
             android:contentDescription="导入课表"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btnMoreTop"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_icon_flat"
+            android:src="@drawable/ic_skeu_more"
+            android:tint="#1B4D8F"
+            android:scaleType="centerInside"
+            android:contentDescription="课表设置"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -121,6 +138,11 @@
             android:background="#ffffff"
             android:visibility="gone">
 
+            <!--
+              标题栏三个动作，和顶栏用同一套「透明底 + 蓝色图标」。
+              原先这里是蓝底/灰底的圆角方块，和顶栏那排无底色图标放一起
+              会显得是两个不同年代的界面 —— 统一成一套更干净。
+            -->
             <LinearLayout
                 android:id="@+id/webBar"
                 android:layout_width="match_parent"
@@ -134,10 +156,11 @@
 
                 <ImageButton
                     android:id="@+id/btnWebBack"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:background="@drawable/btn_flat_grey"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/btn_icon_flat"
                     android:src="@drawable/ic_skeu_back"
+                    android:tint="#1B4D8F"
                     android:scaleType="centerInside"
                     android:contentDescription="返回" />
 
@@ -146,8 +169,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:maxLines="1"
                     android:ellipsize="middle"
                     android:textSize="12.5sp"
@@ -156,20 +179,22 @@
 
                 <ImageButton
                     android:id="@+id/btnWebReload"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:background="@drawable/btn_flat_blue"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/btn_icon_flat"
                     android:src="@drawable/ic_skeu_refresh"
+                    android:tint="#1B4D8F"
                     android:scaleType="centerInside"
                     android:contentDescription="刷新网页" />
 
                 <ImageButton
                     android:id="@+id/btnWebOpenOuter"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:layout_marginStart="6dp"
-                    android:background="@drawable/btn_flat_grey"
-                    android:src="@drawable/ic_more_arrow"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="2dp"
+                    android:background="@drawable/btn_icon_flat"
+                    android:src="@drawable/ic_skeu_external"
+                    android:tint="#1B4D8F"
                     android:scaleType="centerInside"
                     android:contentDescription="用外部浏览器打开" />
             </LinearLayout>

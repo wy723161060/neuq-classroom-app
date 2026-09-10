@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 抽屉顶部的拖动把手：一道 36dp 宽的浅灰短横，暗示「这层可以往下收」 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#DDE1E9" />
+    <corners android:radius="2dp" />
+</shape>

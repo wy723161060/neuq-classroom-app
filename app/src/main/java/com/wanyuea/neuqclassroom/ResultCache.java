@@ -93,6 +93,12 @@ final class ResultCache {
         return day + " 天前";
     }
 
+    /** 缓存文件字节数，不存在返回 -1（缓存管理/诊断里显示体积用） */
+    static long sizeBytes(Context ctx) {
+        File f = file(ctx);
+        return f.exists() ? f.length() : -1;
+    }
+
     static void clear(Context ctx) {
         File f = file(ctx);
         if (f.exists()) f.delete();
