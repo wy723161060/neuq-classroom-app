@@ -1,0 +1,147 @@
+# 东秦空教室 · Android App
+
+在手机上直接查看**东北大学秦皇岛分校**的空闲教室，无需服务器、无需书签、无需一直开着电脑。
+
+App 内置 WebView 打开学校教务系统，你登录一次后会话保留在 App 内；
+之后每次查询由注入脚本在教务页面自己的上下文中读取数据，**不经过任何第三方服务器**，
+并且数据会缓存在本地——**再次打开 App 无需登录即可查看上次结果**。
+
+> 非官方工具，数据取自教务系统实时查询，请以教务系统实际结果为准。
+
+---
+
+## 功能
+
+- **一键查空教室** —— 可选查询范围：今天 / 近 3 天 / 近 7 天
+- **按楼层划分** —— 工学馆拆分为 1–9 层逐层展示，其余楼栋各占一行
+- **三种状态标记** —— 粗体＝全天有空、下划线＝比上一时段新增、删除线＝下个时段将上课
+- **自动过滤非自习教室** —— 实验室、机房、语音室、活动教室、体育场地等不显示
+- **本地缓存 + 免登录** —— 结果存在手机本地，再次打开秒开，7 天后提示更新
+- **会话保持** —— 持久化 Cookie，多数情况下无需重复登录
+- **校徽矢量图标** —— 自适应图标，支持 Android 13+ 主题取色
+
+## 界面
+
+主界面为「楼栋 / 楼层 × 时段」总表，按日期折叠：
+
+```
+楼栋 / 楼层     上午1-2节    上午3-4节    下午5-6节   ...
+工学馆（按楼层）
+  1 层          ⑨ 103 106 107 ...       ③ 503 506 525
+  2 层          ⑦ 203 206 207 ...
+  ...
+  8 层          ⑨ 803 806 807 ...
+基础楼          ② 217 308 ...
+科技楼          ⑧ 6001-1A (自习室) ...
+```
+
+（`⑨` 为该时段该层的空闲教室数量）
+
+## 原理
+
+```
+┌─────────────── 手机 App（WebView）───────────────┐
+│                                                  │
+│  ① 打开 vpn.neuq.edu.cn 教务系统，用户登录一次    │
+│         ↓ 会话 Cookie 持久化到 App 本地           │
+│  ② 点「查空教室」→ 先加载教务查询页               │
+│  ③ 注入 inject.js（同源执行，无跨域限制）         │
+│         ↓ 逐时段 POST free!search.action          │
+│         ↓ 限速 1.2s/次 + 空结果重试，避开风控     │
+│  ④ 解析 table.gridtable → 过滤 → 按楼层归并       │
+│         ↓ window.Android.onResult(json)          │
+│  ⑤ App 生成表格 HTML 展示，同时写入本地缓存       │
+└──────────────────────────────────────────────────┘
+```
+
+为什么用 WebView 注入而不是服务端抓取：教务系统接口**没有开放 CORS**，
+第三方网页无法读取数据；而学校 WebVPN **对境外与云机房 IP 大量返回 403**，
+服务端定时抓取不稳定。WebView 注入让请求发生在教务页面自己的源下，绕开了这两个限制，
+也不需要任何服务器。
+
+## 安装
+
+从 [Releases](https://github.com/wanYuea/neuq-classroom-app/releases/latest) 下载 `东秦空教室.apk` 安装即可。
+
+- 需 Android 8.0（API 26）及以上
+- 安装时如提示「未知来源」，按系统引导放行
+
+### 使用步骤
+
+1. 打开 App —— 若已有缓存数据会**直接显示上次结果**
+2. 首次使用：点「刷新数据」→ 进入教务系统 → 登录**统一身份认证**
+3. 回到 App 选择查询范围 → 等待十几秒（近 7 天约 1 分钟）
+4. 结果按日期折叠，点日期展开；表格可横向滑动查看各时段
+
+## 构建
+
+**环境**：JDK 17+（本仓库使用 JDK 23）、Android SDK（platform 34 / build-tools 34.0.0）、Gradle 8.11.1
+
+```bash
+# 1. 指定 Android SDK 路径（local.properties 已被 gitignore）
+echo "sdk.dir=/你的/AndroidSDK/路径" > local.properties
+
+# 2. 构建
+gradle assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk
+gradle assembleRelease   # → app/build/outputs/apk/release/app-release.apk（已签名）
+```
+
+### 关于签名密钥
+
+`app/neuq.jks` 是随仓库提供的**演示用**密钥库，口令 `neuq2026`（见 `app/build.gradle`）。
+
+它的存在只是为了让 `assembleRelease` 开箱即可运行。**请勿用于正式发布**——
+正式分发请自行生成密钥并妥善保管，可用环境变量覆盖而无需改动代码：
+
+```bash
+export NCQ_KEYSTORE=/path/to/your.jks
+export NCQ_STORE_PASS=你的库口令
+export NCQ_KEY_ALIAS=你的别名
+export NCQ_KEY_PASS=你的私钥口令
+```
+
+### 项目结构
+
+| 路径 | 说明 |
+|---|---|
+| `app/src/main/java/.../MainActivity.java` | 双 WebView、脚本注入、表格 HTML 生成 |
+| `app/src/main/java/.../ResultCache.java` | 本地缓存：读写、7 天过期判断、相对时间文案 |
+| `app/src/main/assets/inject.js` | 注入教务页：限速查询、解析、过滤、回调 App |
+| `app/src/main/assets/table.css` | 结果页样式（手机适配、横向滚动、三层标记） |
+| `app/src/main/res/drawable/ic_launcher_*.xml` | 校徽矢量图标（前景 / 单色层） |
+| `app/src/main/res/mipmap-anydpi-v26/` | 自适应图标声明 |
+
+## 教室过滤规则
+
+为只保留**可自习**的教室，以下条目会被排除（规则对齐 [TsiaohanWang/neuq-classroom-query](https://github.com/TsiaohanWang/neuq-classroom-query)）：
+
+| 类别 | 内容 |
+|---|---|
+| 设备配置 | 体育教学场地、机房、实验室、活动教室、研讨室、多功能、智慧教室、不排课教室、语音室 |
+| 整栋排除 | 大学会馆、旧实验楼 |
+| 数据异常 | 楼栋或设备配置为空、容量为 0、名称非房间号（如「具体安排以开课部门通知为准」） |
+
+名称会做规范化：「工学馆410」→ `410`；「自主学习室C科技楼6001-1A」→ `6001-1A (自习室)`。
+
+实测在本校某一周的全量数据中，约 21500 条原始记录经过滤后保留约 11000 条。
+
+## 已知限制
+
+- **依赖教务页面结构**（表格 class `gridtable`）。教务系统改版后需同步调整 `inject.js`。
+- **首次必须手动登录一次**。统一身份认证不支持程序代填密码，App 也不会保存你的密码。
+- **查询有节流**。每次查询逐时段串行请求（约 1.2 秒/次），近 7 天约需 1 分钟；这是为规避教务
+  「请勿过快点击」风控，进度条会实时显示。
+- **可能被限流**。若同一天各时段返回的教室数量完全相同，App 会提示可能触发了风控，稍后重试即可。
+- **节假日调休**期间教务数据可能未同步，导致空教室表与实际情况不符。
+
+## 致谢
+
+- 过滤规则与楼层展示思路参考 [TsiaohanWang/neuq-classroom-query](https://github.com/TsiaohanWang/neuq-classroom-query)
+- 校徽图形取自上述仓库的 `assets/favicon.svg`
+- 感谢 [Ferry-200/neuq-free-classroom](https://github.com/Ferry-200/neuq-free-classroom) 等前辈项目的探索
+
+## 许可
+
+[MIT](LICENSE)
+
+校徽为东北大学秦皇岛分校标识，版权归学校所有，本项目仅将其用于校内便利工具。

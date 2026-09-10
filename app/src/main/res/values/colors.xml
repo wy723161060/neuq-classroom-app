@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 图标底色：白色，突出深蓝校徽 -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- 校徽主色（东北大学/东秦校徽蓝） -->
+    <color name="brand_blue">#1B4D8F</color>
+</resources>

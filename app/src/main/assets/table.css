@@ -1,0 +1,86 @@
+/* 手机端空教室总表样式 · v2.2（楼层划分版） */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 12px 10px 24px;
+  font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  color: #222; background: #f5f6f8;
+}
+h1 { font-size: 18px; margin: 4px 0 2px; }
+.upd { margin: 0 0 8px; font-size: 12px; color: #888; }
+
+/* 离线缓存提示条 */
+.cache {
+  margin: 6px 0 8px; padding: 9px 12px; border-radius: 9px;
+  font-size: 12.5px; color: #1b5e20; background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+}
+.cache.expired { color: #8a4b00; background: #fff6e5; border-color: #ffe0b2; }
+
+/* 图例 */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin: 0 0 10px; padding: 8px 12px;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  font-size: 11.5px; color: #666;
+}
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend b { font-size: 12.5px; }
+.legend u { text-decoration: underline; }
+.legend del { color: #999; }
+.legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+
+details {
+  background: #fff; border-radius: 10px; margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden;
+}
+summary {
+  padding: 12px 14px; font-weight: 700; font-size: 15px;
+  background: #fff; cursor: pointer; list-style: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "▸ "; color: #999; }
+details[open] summary::before { content: "▾ "; }
+
+.wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 12.5px; }
+th, td {
+  border: 1px solid #ececf1; padding: 6px 8px; text-align: left; vertical-align: top;
+}
+th {
+  background: #f2f3f7; font-weight: 600; white-space: nowrap;
+  position: sticky; top: 0; z-index: 2;
+}
+/* 时段列宽固定，避免内容长短不一导致抖动 */
+th.slot, td.slot { min-width: 92px; }
+
+/* 楼栋 / 楼层 单元格 */
+td.bld {
+  background: #fafbfc; font-weight: 600; white-space: nowrap;
+  position: sticky; left: 0; z-index: 1;
+}
+th.blead {
+  background: #f2f3f7; position: sticky; left: 0; z-index: 3;
+}
+/* 楼层缩进（工学馆 1-7 层） */
+td.bld.floor { padding-left: 18px; font-weight: 500; color: #555; background: #fdfdfe; }
+/* 楼层分组首行（工学馆标题） */
+td.bld.group {
+  background: #eef1f8; font-weight: 700; color: #334; letter-spacing: .5px;
+}
+
+/* 教室列表 */
+.rooms { word-break: break-all; }
+.rooms strong { color: #c0392b; }
+.rooms u { text-decoration: underline; text-decoration-color: #2e7d32; text-underline-offset: 2px; }
+.rooms del { color: #aaa; }
+.none { color: #d5d8dd; }
+.cnt {
+  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 5px;
+  border-radius: 8px; background: #eef1f8; color: #4a5b7a;
+  font-size: 11px; font-weight: 700; text-align: center;
+}
+
+.cnts { margin: 0; padding: 8px 14px; font-size: 11.5px; color: #666; background: #fafbfc; border-top: 1px solid #f0f0f3; }
+.warn { margin: 0; padding: 10px 14px; font-size: 12.5px; color: #8a4b00; background: #fff6e5; }
+.foot { margin-top: 14px; font-size: 11px; color: #999; text-align: center; }

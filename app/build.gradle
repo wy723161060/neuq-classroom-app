@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.wanyuea.neuqclassroom'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.wanyuea.neuqclassroom"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "2.3"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("NCQ_KEYSTORE") ?: "neuq.jks")
+            storePassword System.getenv("NCQ_STORE_PASS") ?: "neuq2026"
+            keyAlias System.getenv("NCQ_KEY_ALIAS") ?: "neuq"
+            keyPassword System.getenv("NCQ_KEY_PASS") ?: "neuq2026"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+// 不依赖任何第三方库，构建更快、体积更小
