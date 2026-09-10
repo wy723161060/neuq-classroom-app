@@ -1,94 +1,410 @@
-/* 手机端空教室总表样式 · v2.2（楼层划分版） */
-* { box-sizing: border-box; }
-body {
-  margin: 0; padding: 12px 10px 24px;
-  font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
-  color: #222; background: #f5f6f8;
+/* ============================================================
+   东秦空闲教室 · 总表样式
+   视觉参照 neuq-classroom-query（楼栋 Tab + 楼层行表格）
+   手机端优先：不做横向滚动，教室号自动换行
+   ============================================================ */
+
+:root {
+  /* ── 页面 ── */
+  --page-bg: #f5f6f8;
+  --page-color: #222;
+
+  /* ── 容器 ── */
+  --container-bg: #ffffff;
+  --container-border: rgba(137, 137, 137, 0.28);
+  --container-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+
+  /* ── Tab 栏 ── */
+  --tabbar-bg: #f0f0f0;
+  --tabbar-border: #d8d8d8;
+  --tab-color: #888;
+  --tab-hover-bg: #e5e5e5;
+  --tab-active-bg: rgba(255, 255, 255, 0.85);
+  --tab-active-color: #777;
+  --tab-active-border: #777;
+  --tab-border: #d8d8d8;
+
+  /* ── 时段标题 ── */
+  --timeslot-color: #777;
+  --timeslot-border: #e6e6e6;
+
+  /* ── 表格 ── */
+  --table-border: #e0e0e0;
+  --table-header-bg: #f7f7f7;
+  --floor-bg: #f7f7f7;
+  --building-bg: #f7f7f7;
+  --data-color: inherit;
+
+  /* ── 标记 ── */
+  --data-strong-color: #4c4c4c;
+  --data-del-color: #9a9a9a;
+  --data-u-color: inherit;
+  --data-u-decoration-color: #4e4e4e;
+
+  /* ── 信息文本 ── */
+  --info-color: #7b7b7b;
+  --link-color: #4e4e4e;
+
+  /* ── 提示条 ── */
+  --warn-color: #8a4b00;
+  --warn-bg: #fff6e5;
+  --warn-border: #ffe0b2;
+
+  /* ── 强调蓝（App 主色） ── */
+  --brand: #1B4D8F;
 }
-h1 { font-size: 18px; margin: 4px 0 2px; }
-.upd { margin: 0 0 8px; font-size: 12px; color: #888; }
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 10px 10px 28px;
+  font: 14px/1.6 "JetBrains Mono", -apple-system, "PingFang SC",
+        "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
+  color: var(--page-color);
+  background: var(--page-bg);
+}
+
+/* ============================================================
+   页头
+   ============================================================ */
+
+h1 {
+  font-size: 17px;
+  margin: 4px 0 2px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+
+.info-text {
+  text-align: center;
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--info-color);
+}
+.info-text b { font-weight: 700; }
 
 /* 离线缓存提示条 */
 .cache {
-  margin: 6px 0 8px; padding: 9px 12px; border-radius: 9px;
-  font-size: 12.5px; color: #1b5e20; background: #e8f5e9;
+  margin: 8px 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: #1b5e20;
+  background: #e8f5e9;
   border: 1px solid #c8e6c9;
 }
-.cache.expired { color: #8a4b00; background: #fff6e5; border-color: #ffe0b2; }
+.cache.expired { color: var(--warn-color); background: var(--warn-bg); border-color: var(--warn-border); }
 .cache b { font-weight: 700; }
-
-/* 「今天」小标签 */
-.tag {
-  display: inline-block; margin-left: 6px; padding: 1px 6px;
-  font-size: 10.5px; font-weight: 600; border-radius: 20px;
-  color: #fff; background: #1B4D8F; vertical-align: 1px;
-}
 
 /* 图例 */
 .legend {
-  display: flex; flex-wrap: wrap; gap: 10px;
-  margin: 0 0 10px; padding: 8px 12px;
-  background: #fff; border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.06);
-  font-size: 11.5px; color: #666;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0 10px;
+  padding: 8px 12px;
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 10px;
+  box-shadow: var(--container-shadow);
+  font-size: 11.5px;
+  color: #666;
 }
 .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend b { font-size: 12.5px; }
 .legend u { text-decoration: underline; }
 .legend del { color: #999; }
-.legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 
-details {
-  background: #fff; border-radius: 10px; margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden;
+/* ============================================================
+   单时段视图：顶部时段快捷切换
+   ============================================================ */
+
+.slotbar {
+  margin: 8px 0 6px;
+  padding: 9px 11px 10px;
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 10px;
+  box-shadow: var(--container-shadow);
 }
+
+.slotbar-tip {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #7b7b7b;
+}
+
+.slotbar-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.slotbtn {
+  flex: 1 1 auto;
+  min-width: 68px;
+  padding: 7px 9px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: linear-gradient(#ffffff, #f2f3f5);
+  color: #555;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.slotbtn:active { background: #e9ecf1; }
+
+/* 当前正在看的这一组 */
+.slotbtn.cur {
+  border-color: var(--brand);
+  background: linear-gradient(#2f6bb5, var(--brand));
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(27, 77, 143, .35);
+}
+
+/* ============================================================
+   日期块（沿用折叠列表）
+   ============================================================ */
+
+details.day {
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  box-shadow: var(--container-shadow);
+  overflow: hidden;
+}
+
 summary {
-  padding: 12px 14px; font-weight: 700; font-size: 15px;
-  background: #fff; cursor: pointer; list-style: none;
+  padding: 11px 14px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 summary::-webkit-details-marker { display: none; }
-summary::before { content: "▸ "; color: #999; }
-details[open] summary::before { content: "▾ "; }
+summary::before {
+  content: "";
+  width: 0; height: 0;
+  border-left: 5px solid #999;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .25s ease;
+  flex: none;
+}
+details.day[open] summary::before { transform: rotate(90deg); }
 
-.wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 12.5px; }
-th, td {
-  border: 1px solid #ececf1; padding: 6px 8px; text-align: left; vertical-align: top;
+/* 「今天」/「从课表跳来」标签 */
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 20px;
+  color: #fff;
+  background: var(--brand);
 }
-th {
-  background: #f2f3f7; font-weight: 600; white-space: nowrap;
-  position: sticky; top: 0; z-index: 2;
-}
-/* 时段列宽固定，避免内容长短不一导致抖动 */
-th.slot, td.slot { min-width: 92px; }
+.tag.jump { color: var(--brand); background: #e3ecf8; }
 
-/* 楼栋 / 楼层 单元格 */
-td.bld {
-  background: #fafbfc; font-weight: 600; white-space: nowrap;
-  position: sticky; left: 0; z-index: 1;
+/* 从课表跳来的说明 */
+.jump-tip {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: #2a4a75;
+  background: #eef4fc;
+  border-top: 1px solid #dbe7f6;
 }
-th.blead {
-  background: #f2f3f7; position: sticky; left: 0; z-index: 3;
-}
-/* 楼层缩进（工学馆 1-7 层） */
-td.bld.floor { padding-left: 18px; font-weight: 500; color: #555; background: #fdfdfe; }
-/* 楼层分组首行（工学馆标题） */
-td.bld.group {
-  background: #eef1f8; font-weight: 700; color: #334; letter-spacing: .5px;
-}
+.jump-tip b { font-weight: 700; }
 
-/* 教室列表 */
-.rooms { word-break: break-all; }
-.rooms strong { color: #c0392b; }
-.rooms u { text-decoration: underline; text-decoration-color: #2e7d32; text-underline-offset: 2px; }
-.rooms del { color: #aaa; }
-.none { color: #d5d8dd; }
-.cnt {
-  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 5px;
-  border-radius: 8px; background: #eef1f8; color: #4a5b7a;
-  font-size: 11px; font-weight: 700; text-align: center;
+/* 限流警告 */
+.warn {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: var(--warn-color);
+  background: var(--warn-bg);
+  border-top: 1px solid var(--warn-border);
 }
 
-.cnts { margin: 0; padding: 8px 14px; font-size: 11.5px; color: #666; background: #fafbfc; border-top: 1px solid #f0f0f3; }
-.warn { margin: 0; padding: 10px 14px; font-size: 12.5px; color: #8a4b00; background: #fff6e5; }
-.foot { margin-top: 14px; font-size: 11px; color: #999; text-align: center; }
+/* ============================================================
+   楼栋 Tab
+   ============================================================ */
+
+.tab-container {
+  margin: 0 10px;
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tab-buttons {
+  display: flex;
+  background: var(--tabbar-bg);
+  border-bottom: 1px solid var(--tabbar-border);
+}
+
+.tab-button {
+  flex: 1 1 0;
+  padding: 8px 6px;
+  border: none;
+  border-right: 1px solid var(--tab-border);
+  background: transparent;
+  color: var(--tab-color);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color .2s, color .2s, border-color .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-button:last-child { border-right: none; }
+.tab-button:active { background: var(--tab-hover-bg); }
+.tab-button.active {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-color);
+  border-bottom: 2px solid var(--tab-active-border);
+}
+
+.tab-content { display: none; padding: 0 10px 10px; }
+.tab-content.active { display: block; }
+
+/* 该楼栋今天完全没有空教室 */
+.empty-day {
+  margin: 10px 0 0;
+  padding: 18px 0;
+  text-align: center;
+  font-size: 13px;
+  color: #aab;
+}
+
+/* ============================================================
+   时段标题（可折叠）
+   ============================================================ */
+
+.timeslot-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 10px 0 3px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--timeslot-color);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggle-icon {
+  flex: none;
+  width: 0; height: 0;
+  border-top: 5px solid #999;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  transition: transform .28s ease;
+}
+.timeslot-title.collapsed .toggle-icon { transform: rotate(-90deg); }
+
+/* 从课表跳来时，高亮用户点的那一节 */
+.timeslot-title.hit { color: var(--brand); }
+.timeslot-title.hit .toggle-icon { border-top-color: var(--brand); }
+.timeslot-title .cnt-mini {
+  font-size: 11px;
+  font-weight: 400;
+  color: #aab;
+}
+
+/* 时段表格：折叠时整体收起 */
+.timeslot-body { overflow: hidden; }
+.timeslot-body.collapsed { display: none; }
+
+/* ============================================================
+   楼层表格
+   ============================================================ */
+
+table.slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+table.slot-table td {
+  border: 1px solid var(--table-border);
+  padding: 5px 6px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* 楼层/楼栋列 */
+table.slot-table td.floor {
+  width: 44px;
+  text-align: center;
+  font-weight: 700;
+  background: var(--floor-bg);
+  color: inherit;
+  white-space: nowrap;
+}
+
+/* 楼栋名（本部其它 / 南校区 左列） */
+table.slot-table td.building {
+  background: var(--building-bg);
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 教室号列：居中、自动换行 */
+table.slot-table td.rooms {
+  text-align: center;
+  word-break: break-word;
+  white-space: pre-wrap;
+  line-height: 1.9;
+}
+
+/* 教室内每个号之间留空（用行内 span 的 margin） */
+table.slot-table td.rooms .r { display: inline-block; }
+table.slot-table td.rooms .r + .r { margin-left: 6px; }
+
+/* 该行/该时段无教室 */
+table.slot-table td.rooms .none { color: #cfd4dc; }
+
+/* ── 三种状态标记 ── */
+table.slot-table strong { font-weight: 700; color: var(--data-strong-color); }
+table.slot-table del {
+  color: var(--data-del-color);
+  text-decoration: line-through;
+  text-decoration-color: var(--data-del-color);
+  text-decoration-thickness: .75px;
+}
+table.slot-table u {
+  color: var(--data-u-color);
+  text-decoration: underline;
+  text-decoration-color: var(--data-u-decoration-color);
+  text-decoration-thickness: 1.25px;
+  text-underline-offset: 2px;
+}
+
+/* ============================================================
+   页脚
+   ============================================================ */
+
+.foot {
+  margin-top: 14px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+}

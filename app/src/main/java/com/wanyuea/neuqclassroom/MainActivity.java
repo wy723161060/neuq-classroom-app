@@ -17,7 +17,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.DatePicker;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -45,15 +45,16 @@ public class MainActivity extends Activity {
             "https://vpn.neuq.edu.cn/http/77726476706e69737468656265737421fae05988693e6d456f468ca88d1b203b/eams/";
     private boolean pendingQuery = false;
     private int queryDays = 1;
+    private int queryStartOffset = 0;   // 起始日相对今天的天数（0=今天，1=明天）
     private int queryGap = 1000;
 
     private WebView loginView;
     private WebView resultView;
     private TextView statusText;
     private ProgressBar progressBar;
-    private Button btnQuery;
-    private Button btnBack;
-    private Button btnRefreshData;
+    private ImageButton btnQuery;
+    private ImageButton btnBack;
+    private ImageButton btnRefreshData;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String injectJs = "";
     private String css = "";
@@ -70,9 +71,24 @@ public class MainActivity extends Activity {
     private View indSchedule;
     private TextView tvClassroom;
     private TextView tvSchedule;
-    private Button btnImport;
-    private Button btnReimport;
-    private Button btnRefresh;
+    private ImageButton btnImport;
+    private ImageButton btnReimport;
+
+    /* ---------- 顶栏按钮状态机 ----------
+       所有按钮显隐只由 applyUi(state) 一处决定。
+       以前是 30 处散落的 setVisibility，漏改一处就会出 bug
+       （比如返回键失效、空教室页残留课表按钮）。 */
+
+    /** 顶栏状态：决定哪些按钮可见 */
+    private enum UiState {
+        LOGIN,          // 教务 WebView 可见，等用户登录
+        ROOM_EMPTY,     // 空教室页，还没有数据 → 查空教室
+        ROOM_DATA,      // 空教室页，有数据 → 刷新数据
+        SCHEDULE_EMPTY, // 课表页，还没导入 → 导入课表
+        SCHEDULE_DATA,  // 课表页，有课表 → 重新导入
+        BUSY            // 任意页面正在查询/抓取
+    }
+    private UiState uiState = UiState.SCHEDULE_EMPTY;
 
     /* ---------- 课表状态 ---------- */
     private JSONObject scheduleData;        // 当前课表：courses / timeSlots / semesterId
@@ -87,6 +103,10 @@ public class MainActivity extends Activity {
     private String singleLabel = "";
     private int singleTb = 1;
     private int singleTe = 2;
+    private String highlightDate = "";      // 从课表跳过来时，要高亮的那一天
+    private int highlightTb = 0;            // 高亮的起始节次（0=不高亮）
+    private boolean singleMode = false;     // 当前结果页是不是「单时段」视图（带时段快捷切换）
+    private String singleWeekday = "";      // 单时段视图的星期，用于时段快捷按钮重查
 
     private static final String PREFS = "neuq_prefs";
     private static final String KEY_TERM_START = "termStart_";    // 第 1 周周一，毫秒
@@ -104,7 +124,6 @@ public class MainActivity extends Activity {
         btnQuery = findViewById(R.id.btnQuery);
         btnBack = findViewById(R.id.btnBack);
         btnRefreshData = findViewById(R.id.btnRefreshData);
-        btnRefresh = findViewById(R.id.btnRefresh);
         btnImport = findViewById(R.id.btnImport);
         btnReimport = findViewById(R.id.btnReimport);
         tabClassroom = findViewById(R.id.tabClassroom);
@@ -131,10 +150,6 @@ public class MainActivity extends Activity {
 
         btnQuery.setOnClickListener(v -> askDays());
         btnBack.setOnClickListener(v -> showLogin());
-        btnRefresh.setOnClickListener(v -> {
-            showLogin();
-            loginView.reload();
-        });
         btnRefreshData.setOnClickListener(v -> {
             showLogin();
             askDays();
@@ -192,7 +207,8 @@ public class MainActivity extends Activity {
                 pendingQuery = false;
                 statusText.setText("正在查询 " + queryDays + " 天 × 7 个时段…");
                 view.evaluateJavascript(injectJs, null);
-                view.evaluateJavascript("window.nqFetch(" + queryDays + "," + queryGap + ");", null);
+                view.evaluateJavascript("window.nqFetch(" + queryDays + ","
+                        + queryGap + "," + queryStartOffset + ");", null);
             }
 
             @Override
@@ -234,8 +250,7 @@ public class MainActivity extends Activity {
             statusText.setText("第 " + currentWeek() + " 周 · 课表来自本地缓存");
         } else {
             showScheduleHtml(emptyScheduleHtml());
-            btnImport.setVisibility(View.VISIBLE);
-            btnQuery.setVisibility(View.GONE);
+            applyUi(UiState.SCHEDULE_EMPTY);
             statusText.setText("还没有课表，点「导入课表」");
         }
 
@@ -268,17 +283,28 @@ public class MainActivity extends Activity {
     }
 
     private void askDays() {
-        final String[] items = {"仅今天（约 10 秒）", "近 3 天（约 25 秒）", "近 7 天（约 60 秒）"};
-        final int[] days = {1, 3, 7};
+        // 起始日 → 连续天数。选「明天」就是明天起连着 7 天，
+        // 因为教务接口只支持「某天 + 连续 N 天」，不能直接跳着查本周剩余几天。
+        final String[] items = {
+                "今天（1 天，约 10 秒）",
+                "明天起 7 天（约 60 秒）",
+                "今天起 7 天（约 60 秒）"
+        };
+        final int[] starts = {0, 1, 0};
+        final int[] days = {1, 7, 7};
         new AlertDialog.Builder(this)
                 .setTitle("查询范围")
-                .setItems(items, (dialog, which) -> startQuery(days[which]))
+                .setItems(items, (dialog, which) -> startQuery(starts[which], days[which]))
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void startQuery(int days) {
+    private void startQuery(int startOffsetDays, int days) {
+        queryStartOffset = startOffsetDays;
         queryDays = days;
+        highlightDate = "";        // 手动查的，不带课表高亮
+        highlightTb = 0;
+        singleMode = false;        // 整表视图，不是单时段
         statusText.setText("正在打开教务查询页…");
         setBusy(true);
         progressBar.setProgress(0);
@@ -288,35 +314,88 @@ public class MainActivity extends Activity {
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
+    /**
+     * 顶栏按钮显隐的唯一出口。
+     *
+     * 调用方只管声明「现在处于什么状态」，不需要知道有哪些按钮、谁该隐藏。
+     * 想加按钮/改规则，只改这个方法。
+     */
+    private void applyUi(UiState state) {
+        uiState = state;
+        boolean room = (currentTab == TAB_CLASSROOM);
+
+        // 各状态下的按钮可见性
+        boolean vQuery = false, vBack = false, vRefreshData = false;
+        boolean vImport = false, vReimport = false;
+
+        switch (state) {
+            case LOGIN:
+                // 正看着教务网页：只给「查空教室」（课表 Tab 下给「导入课表」）
+                if (room) vQuery = true; else vImport = true;
+                break;
+            case ROOM_EMPTY:
+                vQuery = true;
+                break;
+            case ROOM_DATA:
+                vRefreshData = true;
+                break;
+            case SCHEDULE_EMPTY:
+                vImport = true;
+                break;
+            case SCHEDULE_DATA:
+                vReimport = true;
+                break;
+            case BUSY:
+                // 查询中：空教室页保留按钮位置（禁用态），课表页全部隐藏
+                if (room) vQuery = true;
+                break;
+        }
+
+        btnQuery.setVisibility(vQuery ? View.VISIBLE : View.GONE);
+        btnBack.setVisibility(vBack ? View.VISIBLE : View.GONE);
+        btnRefreshData.setVisibility(vRefreshData ? View.VISIBLE : View.GONE);
+        btnImport.setVisibility(vImport ? View.VISIBLE : View.GONE);
+        btnReimport.setVisibility(vReimport ? View.VISIBLE : View.GONE);
+
+        // 忙碌时禁用可点的按钮，避免重复触发
+        boolean busy = (state == UiState.BUSY);
+        btnQuery.setEnabled(!busy);
+        btnRefreshData.setEnabled(!busy);
+        btnImport.setEnabled(!busy);
+        btnReimport.setEnabled(!busy);
+    }
+
     private void showLogin() {
         resultView.setVisibility(View.GONE);
         loginView.setVisibility(View.VISIBLE);
-        btnBack.setVisibility(View.GONE);
-        btnRefreshData.setVisibility(View.GONE);
-        btnQuery.setVisibility(View.VISIBLE);
         statusText.setText("教务系统");
+        applyUi(UiState.LOGIN);
     }
 
-    /** 查询进行中：禁用按钮、显示进度 */
+    /** 查询进行中：显示进度条，并切到 BUSY 状态 */
     private void setBusy(boolean busy) {
         progressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
-        btnQuery.setEnabled(!busy);
-        btnRefreshData.setEnabled(!busy);
         if (busy) {
-            boolean room = (currentTab == TAB_CLASSROOM);
-            btnQuery.setVisibility(room ? View.VISIBLE : View.GONE);
-            btnBack.setVisibility(View.GONE);
-            btnRefreshData.setVisibility(View.GONE);
-            btnImport.setVisibility(View.GONE);
-            btnReimport.setVisibility(View.GONE);
+            applyUi(UiState.BUSY);
+        } else {
+            // 结束忙碌：回到当前 Tab 的常态（有没有数据决定具体状态）
+            applyIdleUi();
+        }
+    }
+
+    /** 当前 Tab 在非忙碌时应处的状态 */
+    private void applyIdleUi() {
+        if (currentTab == TAB_CLASSROOM) {
+            applyUi(ResultCache.load(this) != null ? UiState.ROOM_DATA : UiState.ROOM_EMPTY);
+        } else {
+            applyUi(scheduleData != null ? UiState.SCHEDULE_DATA : UiState.SCHEDULE_EMPTY);
         }
     }
 
     private void showHtml(String html) {
         loginView.setVisibility(View.GONE);
         resultView.setVisibility(View.VISIBLE);
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.VISIBLE);
+        applyUi(UiState.ROOM_DATA);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
@@ -351,7 +430,6 @@ public class MainActivity extends Activity {
                             c.put("cacheAgeText", ResultCache.ageText(MainActivity.this));
                             c.put("cacheExpired", ResultCache.isExpired(MainActivity.this));
                             showHtml(buildHtml(c));
-                            btnRefreshData.setVisibility(View.VISIBLE);
                             statusText.setText("实时查询失败，显示上次数据（"
                                     + ResultCache.ageText(MainActivity.this) + "）");
                         } else {
@@ -367,7 +445,6 @@ public class MainActivity extends Activity {
                     CookieManager.getInstance().flush();
 
                     showHtml(buildHtml(o));
-                    btnRefreshData.setVisibility(View.VISIBLE);
                     if (o.optBoolean("throttled", false)) {
                         statusText.setText("更新于 " + o.optString("updated", "")
                                 + "（疑似被限流，各时段数量相同，建议重查）");
@@ -449,6 +526,15 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> jumpToFreeRooms(day, section, section));
         }
 
+        /**
+         * 结果页顶部时段快捷切换：点了「下午5-6节」就换到那一组重查。
+         * 日期沿用当前展示的那一天，所以只传时段下标。
+         */
+        @JavascriptInterface
+        public void pickSlot(final int slotIdx) {
+            mainHandler.post(() -> switchSlot(slotIdx));
+        }
+
         /** 点击课程卡片 → 显示这节课的详情 */
         @JavascriptInterface
         public void onCourseClick(final int day, final int startSection, final int endSection) {
@@ -473,23 +559,108 @@ public class MainActivity extends Activity {
 
     /* ---------- 生成表格 HTML（按楼层划分，对齐原项目） ---------- */
 
-    /** 按楼层划分的楼栋：工学馆按楼层分，其余楼栋整体一列 */
+    /** 按楼层划分的楼栋：工学馆按楼层分行，其余楼栋整体一行 */
     private static final String FLOOR_BUILDING = "工学馆";
     /** 工学馆实际到 8 层（含 803/825 等），取 9 层留余量 */
     private static final int MAX_FLOOR = 9;
 
-    /** 楼栋展示顺序（工学馆排第一，其余按此顺序） */
+    /**
+     * 楼栋 → 校区 Tab 的分组。
+     *
+     * 参照东秦空闲教室总表的三分区：工学馆（按楼层拆）、本部其它、南校区。
+     * 每组内的楼栋顺序即展示顺序；未列入的楼栋归到「本部其它」并追加在后。
+     */
+    private static final String[] CAMPUS_TABS = {"工学馆", "本部其它", "南校区"};
+    private static final String[][] CAMPUS_BUILDINGS = {
+            {"工学馆"},
+            {"基础楼", "综合实验楼", "地质楼", "管理楼"},
+            {"科技楼", "人文楼"}
+    };
+
+    /** 楼栋展示顺序（工学馆排第一，其余按此顺序），保留给课表联动等旧逻辑使用 */
     private static final String[] BUILDING_ORDER = {
             "工学馆", "基础楼", "综合实验楼", "地质楼", "管理楼", "科技楼", "人文楼"
     };
 
-    private String buildHtml(JSONObject o) throws Exception {
-        JSONArray days = o.getJSONArray("days");
+    /**
+     * 空教室总表的交互脚本。
+     *
+     * 只用事件委托绑一次，不给每个元素挂 onclick —— 一天最多 3 个 Tab × 6 个时段，
+     * 内联 onclick 会让 HTML 膨胀不少，而且以后改结构容易漏。
+     */
+    private static final String TABLE_SCRIPT =
+            "<script>(function(){"
+            + "function closest(el,sel){while(el&&el.nodeType===1){if(el.matches(sel))return el;el=el.parentNode;}return null;}"
+            // 楼栋 Tab：切 active，同时让同容器内的 content 跟着切
+            + "function pickTab(btn){"
+            + "var bar=btn.parentNode;"
+            + "var kids=bar.children;"
+            + "for(var i=0;i<kids.length;i++){kids[i].classList.remove('active');}"
+            + "btn.classList.add('active');"
+            + "var box=bar.parentNode;"
+            + "for(var j=0;j<box.children.length;j++){"
+            + "var c=box.children[j];"
+            + "if(c.classList&&c.classList.contains('tab-content')){c.classList.remove('active');}"
+            + "}"
+            + "var target=document.getElementById(btn.getAttribute('data-tab'));"
+            + "if(target)target.classList.add('active');"
+            + "}"
+            // 时段折叠
+            + "function fold(h){"
+            + "h.classList.toggle('collapsed');"
+            + "var b=document.getElementById(h.getAttribute('data-fold'));"
+            + "if(b)b.classList.toggle('collapsed',h.classList.contains('collapsed'));"
+            + "}"
+            + "document.addEventListener('click',function(e){"
+            + "var t=closest(e.target,'.tab-button');if(t){pickTab(t);return;}"
+            + "var h=closest(e.target,'.timeslot-title');if(h){fold(h);return;}"
+            + "},false);"
+            + "})();</script>";
+
+    /**
+     * 单时段视图顶部的时段快捷切换条。
+     *
+     * 用户从课表点进来时只查了一组（比如第 3-4 节），这一排按钮让他不用退回课表
+     * 就能直接换到别的一组重查。「昼间1-8节」是教务的合并统计项，不放进切换条。
+     */
+    private void appendSlotSwitcher(StringBuilder sb) {
+        sb.append("<div class=\"slotbar\">")
+                .append("<div class=\"slotbar-tip\">点课表空白格只查了这一组，"
+                        + "想换别的时段直接点下面：</div>")
+                .append("<div class=\"slotbar-btns\">");
+        for (int i = 0; i < FREE_SLOTS.length; i++) {
+            if (i == 4) continue;    // 跳过「昼间1-8节」合并项
+            int tb = FREE_SLOTS[i][0], te = FREE_SLOTS[i][1];
+            boolean cur = (tb == singleTb && te == singleTe);
+            sb.append("<button class=\"slotbtn").append(cur ? " cur" : "")
+                    .append("\" onclick=\"AndroidResultHost.pickSlot(").append(i).append(")\">")
+                    .append(tb).append("-").append(te).append(" 节")
+                    .append("</button>");
+        }
+        sb.append("</div></div>");
+    }
+
+    private String buildHtml(JSONObject o) throws Exception {        JSONArray days = o.getJSONArray("days");
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.append("<title>东秦空教室速查</title><style>").append(css).append("</style></head><body>");
-        sb.append("<h1>东秦 · 空闲教室速查</h1>");
+
+        // 页头：先给「今天」的日期，再给表格标题（对齐参考站点的版式）
+        sb.append("<h1>空闲教室总表</h1>");
+        sb.append("<p class=\"info-text\">数据实时取自教务系统 · 更新于 ")
+                .append(esc(o.optString("updated", ""))).append("</p>");
+
+        // 单时段视图（点课表空白格跳过来）：顶部给一排时段快捷切换
+        if (o.optBoolean("single", false)) {
+            appendSlotSwitcher(sb);
+        }
+
+        int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
+        if (raw > 0) {
+            sb.append("<p class=\"info-text\">已排除实验室、机房、语音室等非自习教室：原始 ")
+                    .append(raw).append(" 条 → 保留 <b>").append(kept).append("</b> 条</p>");
+        }
 
         // 离线缓存提示
         if (o.optBoolean("fromCache", false)) {
@@ -499,23 +670,15 @@ public class MainActivity extends Activity {
             sb.append("<div class=\"cache")
                     .append(expired || stale ? " expired" : "").append("\">");
             if (expired) {
-                sb.append("数据已过期（").append(esc(age)).append("），请点「刷新数据」");
+                sb.append("数据已过期（").append(esc(age)).append("），请刷新");
             } else if (stale) {
                 sb.append("这是 <b>")
                         .append(esc(cacheFirstDate(o))).append("</b> 的数据，不是今天的 · ")
-                        .append(esc(age)).append("抓取，点「刷新数据」看今天的");
+                        .append(esc(age)).append("抓取");
             } else {
-                sb.append("今日空教室 · 上次抓取于 ").append(esc(age));
+                sb.append("离线数据 · 上次抓取于 ").append(esc(age));
             }
             sb.append("</div>");
-        }
-
-        sb.append("<p class=\"upd\">数据实时取自教务系统 · 更新于 ")
-                .append(o.optString("updated", "")).append("</p>");
-        int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
-        if (raw > 0) {
-            sb.append("<p class=\"upd\">已排除实验室、机房、语音室、活动教室、体育场地等非自习教室：原始 ")
-                    .append(raw).append(" 条 → 保留 <b>").append(kept).append("</b> 条</p>");
         }
 
         // 图例
@@ -544,9 +707,11 @@ public class MainActivity extends Activity {
 
             String dDate = d.getString("date");
             boolean isToday = dDate.equals(dateStr(System.currentTimeMillis()));
-            sb.append("<details").append(i == 0 ? " open" : "").append("><summary>")
+            boolean isJumped = dDate.equals(highlightDate);
+            sb.append("<details class=\"day\"").append(i == 0 ? " open" : "").append("><summary>")
                     .append(esc(dDate)).append(" 周").append(esc(d.optString("weekday", "")))
                     .append(isToday ? "<span class=\"tag\">今天</span>" : "")
+                    .append(isJumped ? "<span class=\"tag jump\">从课表跳来</span>" : "")
                     .append("</summary>");
 
             if (d.optBoolean("throttle", false)) {
@@ -554,101 +719,221 @@ public class MainActivity extends Activity {
                         + "请点「返回教务」稍等几秒后重查。</p>");
             }
 
-            // 各时段条数概览
-            sb.append("<p class=\"cnts\">");
-            for (int s = 0; s < nSlot; s++) {
-                JSONObject slot = slots.getJSONObject(s);
-                sb.append(esc(slot.getString("label"))).append("：")
-                        .append(slot.optBoolean("ok", false)
-                                ? slot.optInt("count", 0) + " 间" : "失败")
-                        .append("　");
+            // 单时段视图：说明为什么只有一组数据；整表视图：说明为什么整天都查了
+            if (isJumped && highlightTb > 0) {
+                if (singleMode) {
+                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
+                            .append(" 节</b>，属 <b>").append(highlightTb).append("-")
+                            .append(highlightTb + 1).append(" 节</b> 这一组，"
+                                    + "下面是这一组所有空闲教室。</p>");
+                } else {
+                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
+                            .append(" 节</b>，这一天整个都查了。</p>");
+                }
             }
-            sb.append("</p>");
 
             // 全天空闲集合（用于加粗）
             java.util.Map<String, java.util.Set<String>> allDay = computeAllDayFree(slots);
 
-            sb.append("<div class=\"wrap\"><table><thead><tr><th class=\"blead\">楼栋 / 楼层</th>");
-            for (int s = 0; s < nSlot; s++) {
-                sb.append("<th class=\"slot\">")
-                        .append(esc(slots.getJSONObject(s).getString("label")))
-                        .append("</th>");
-            }
-            sb.append("</tr></thead><tbody>");
-
-            for (String b : ordered) {
-                if (FLOOR_BUILDING.equals(b)) {
-                    // 工学馆：按 1-7 层分行
-                    sb.append("<tr><td class=\"bld group\" colspan=\"").append(nSlot + 1)
-                            .append("\">").append(esc(b)).append("（按楼层）</td></tr>");
-                    for (int floor = 1; floor <= MAX_FLOOR; floor++) {
-                        appendRow(sb, slots, b, floor, allDay, "floor");
-                    }
-                    // 无法归入 1-7 层的房间（如 8 层以上/非数字）
-                    appendRow(sb, slots, b, 0, allDay, "floor");
-                } else {
-                    appendRow(sb, slots, b, -1, allDay, "");
-                }
-            }
-            sb.append("</tbody></table></div></details>");
+            appendCampusTabs(sb, i, days, slots, ordered, allDay, isJumped);
+            sb.append("</details>");
         }
 
         sb.append("<p class=\"foot\">数据仅在你已登录的教务会话中读取，不会上传任何信息。</p>");
+        sb.append(TABLE_SCRIPT);
         sb.append("</body></html>");
         return sb.toString();
     }
 
     /**
-     * 输出一行。
+     * 输出某一天的「楼栋 Tab + 时段表格」主体。
      *
-     * @param floor -1=整栋一列；0=该楼栋中无法归入 1-7 层的房间；1..7=指定楼层
-     * @param cls   附加到楼栋单元格的样式类
+     * 结构对齐东秦空闲教室总表：
+     *   楼栋 Tab（工学馆 / 本部其它 / 南校区）
+     *     └ 每个时段一个可折叠区块
+     *         └ 一张表：工学馆按楼层为行（1F…9F），其它楼栋以楼栋名为行
+     *
+     * @param dayIdx  第几天（用于生成唯一 DOM id）
+     * @param ordered 本日实际出现的楼栋，已排序
      */
-    private void appendRow(StringBuilder sb, JSONArray slots, String building, int floor,
-                           java.util.Map<String, java.util.Set<String>> allDay, String cls) {
+    private void appendCampusTabs(StringBuilder sb, int dayIdx, JSONArray days, JSONArray slots,
+                                  List<String> ordered,
+                                  java.util.Map<String, java.util.Set<String>> allDay,
+                                  boolean isJumped) throws Exception {
         int nSlot = slots.length();
 
-        // 先按楼层筛出每个时段的房间，全空则整行省略
-        List<List<String>> perSlot = new ArrayList<>();
-        boolean anyRoom = false;
-        for (int s = 0; s < nSlot; s++) {
-            List<String> rooms = new ArrayList<>();
-            JSONArray arr = roomsOf(slots, s, building);
-            if (arr != null) {
-                for (int k = 0; k < arr.length(); k++) {
-                    String r = arr.optString(k, "");
-                    if (r.isEmpty()) continue;
-                    if (floor > 0 && floorOf(r) != floor) continue;
-                    if (floor == 0 && floorOf(r) > 0 && floorOf(r) <= MAX_FLOOR) continue;
-                    rooms.add(r);
-                }
-            }
-            sortRooms(rooms);
-            if (!rooms.isEmpty()) anyRoom = true;
-            perSlot.add(rooms);
+        // 只保留本日真正有数据的 Tab；全空也保留工学馆，避免页面整个空掉
+        List<String> liveTabs = new ArrayList<>();
+        List<List<String>> liveBuildings = new ArrayList<>();
+        for (int t = 0; t < CAMPUS_TABS.length; t++) {
+            List<String> bs = new ArrayList<>();
+            for (String b : CAMPUS_BUILDINGS[t]) if (ordered.contains(b)) bs.add(b);
+            if (bs.isEmpty()) continue;
+            liveTabs.add(CAMPUS_TABS[t]);
+            liveBuildings.add(bs);
         }
-        if (!anyRoom) return;   // 该行整天空无教室，不显示
+        // 不在预设分组里的楼栋（教务新增了楼），统一塞进「本部其它」
+        List<String> known = new ArrayList<>();
+        for (String[] group : CAMPUS_BUILDINGS) {
+            for (String b : group) known.add(b);
+        }
+        for (String b : ordered) {
+            if (known.contains(b)) continue;
+            int qi = liveTabs.indexOf("本部其它");
+            if (qi < 0) {
+                liveTabs.add("本部其它");
+                liveBuildings.add(new ArrayList<>());
+                qi = liveTabs.size() - 1;
+            }
+            liveBuildings.get(qi).add(b);
+        }
 
-        String label = floor > 0 ? (floor + " 层") : building;
-        sb.append("<tr><td class=\"bld ").append(cls).append("\">").append(esc(label)).append("</td>");
+        if (liveTabs.isEmpty()) {
+            sb.append("<p class=\"empty-day\">这一天没有查到空闲教室</p>");
+            return;
+        }
+
+        sb.append("<div class=\"tab-container\"><div class=\"tab-buttons\">");
+        for (int t = 0; t < liveTabs.size(); t++) {
+            sb.append("<button class=\"tab-button").append(t == 0 ? " active" : "")
+                    .append("\" data-tab=\"tab-").append(dayIdx).append("-").append(t)
+                    .append("\">").append(esc(liveTabs.get(t))).append("</button>");
+        }
+        sb.append("</div>");
+
+        for (int t = 0; t < liveTabs.size(); t++) {
+            sb.append("<div class=\"tab-content").append(t == 0 ? " active" : "")
+                    .append("\" id=\"tab-").append(dayIdx).append("-").append(t).append("\">");
+            appendSlotSections(sb, dayIdx, t, slots, liveBuildings.get(t), allDay, isJumped);
+            sb.append("</div>");
+        }
+        sb.append("</div>");
+    }
+
+    /** 某个楼栋分组下，逐个时段输出「标题 + 表格」 */
+    private void appendSlotSections(StringBuilder sb, int dayIdx, int tabIdx, JSONArray slots,
+                                    List<String> buildings,
+                                    java.util.Map<String, java.util.Set<String>> allDay,
+                                    boolean isJumped) throws Exception {
+        int nSlot = slots.length();
+        boolean hasAny = false;
 
         for (int s = 0; s < nSlot; s++) {
-            List<String> rooms = perSlot.get(s);
-            sb.append("<td class=\"slot\">");
-            if (rooms.isEmpty()) {
-                sb.append("<span class=\"none\">—</span>");
+            JSONArray slotRow = buildSlotTable(slots, s, buildings, allDay);
+            if (slotRow == null) continue;    // 该时段本分组无教室，整块省略
+            hasAny = true;
+
+            String label = slots.getJSONObject(s).getString("label");
+            boolean hit = isJumped && s == highlightTb - 1;
+            int shown = slotRow.length();
+
+            // 标题：可折叠，默认展开；从课表跳来的那一节标记出来
+            sb.append("<h3 class=\"timeslot-title").append(hit ? " hit" : "")
+                    .append("\" data-fold=\"body-").append(dayIdx).append("-").append(tabIdx)
+                    .append("-").append(s).append("\">")
+                    .append("<span class=\"toggle-icon\"></span>")
+                    .append(esc(label))
+                    .append("<span class=\"cnt-mini\">（").append(shown).append(" 行）</span>")
+                    .append("</h3>");
+
+            sb.append("<div class=\"timeslot-body\" id=\"body-")
+                    .append(dayIdx).append("-").append(tabIdx).append("-").append(s).append("\">")
+                    .append("<table class=\"slot-table\">");
+
+            for (int r = 0; r < shown; r++) {
+                JSONArray row = slotRow.getJSONArray(r);
+                String head = row.getString(0);
+                String headCls = row.getString(1);
+                String cells = row.getString(2);
+                sb.append("<tr><td class=\"").append(headCls).append("\">")
+                        .append(esc(head)).append("</td>")
+                        .append("<td class=\"rooms\">").append(cells).append("</td></tr>");
+            }
+            sb.append("</table></div>");
+        }
+
+        if (!hasAny) {
+            sb.append("<p class=\"empty-day\">这些时段都没有空闲教室</p>");
+        }
+    }
+
+    /**
+     * 构建某个时段、某个楼栋分组下的表格行。
+     *
+     * 返回值为「行数组」，每行是 3 元组 [行头文字, 行头样式类, 教室单元格 HTML]：
+     *   · 工学馆 → 按楼层拆行，行头 "1F"…"9F"，样式类 floor
+     *   · 其它楼栋 → 每个楼栋一行，行头是楼栋名，样式类 building
+     * 该时段本分组完全没有教室时返回 null（调用方跳过整块）。
+     */
+    private JSONArray buildSlotTable(JSONArray slots, int slotIdx, List<String> buildings,
+                                     java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
+        int nSlot = slots.length();
+        JSONArray rows = new JSONArray();
+        boolean any = false;
+
+        for (String b : buildings) {
+            if (FLOOR_BUILDING.equals(b)) {
+                // 工学馆：1..MAX_FLOOR 逐层，另有无法归层的房间放最后一行
+                for (int floor = 1; floor <= MAX_FLOOR; floor++) {
+                    JSONArray r = slotRow(slots, slotIdx, nSlot, b, floor, allDay);
+                    if (r != null) { rows.put(r); any = true; }
+                }
+                JSONArray rest = slotRow(slots, slotIdx, nSlot, b, 0, allDay);
+                if (rest != null) { rows.put(rest); any = true; }
             } else {
-                sb.append("<span class=\"cnt\">").append(rooms.size()).append("</span>");
-                sb.append("<span class=\"rooms\">");
-                for (int k = 0; k < rooms.size(); k++) {
-                    if (k > 0) sb.append(" ");
-                    sb.append(styleRoom(rooms.get(k), building, s, nSlot, slots, allDay));
-                }
-                sb.append("</span>");
+                // 其余楼栋：整栋一行，不拆楼层
+                JSONArray r = slotRow(slots, slotIdx, nSlot, b, -1, allDay);
+                if (r != null) { rows.put(r); any = true; }
             }
-            sb.append("</td>");
         }
-        sb.append("</tr>");
+        return any ? rows : null;
+    }
+
+    /**
+     * 生成单行：[行头, 行头类名, 教室 HTML]，该行在本时段无教室则返回 null。
+     *
+     * @param floor -1=整栋一行；0=无法归入 1..MAX_FLOOR 的房间；1..MAX_FLOOR=指定楼层
+     */
+    private JSONArray slotRow(JSONArray slots, int slotIdx, int nSlot, String building, int floor,
+                              java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
+        List<String> rooms = new ArrayList<>();
+        JSONArray arr = roomsOf(slots, slotIdx, building);
+        if (arr != null) {
+            for (int k = 0; k < arr.length(); k++) {
+                String r = arr.optString(k, "");
+                if (r.isEmpty()) continue;
+                int f = floorOf(r);
+                if (floor > 0 && f != floor) continue;
+                if (floor == 0 && f > 0 && f <= MAX_FLOOR) continue;
+                rooms.add(r);
+            }
+        }
+        if (rooms.isEmpty()) return null;
+        sortRooms(rooms);
+
+        StringBuilder cells = new StringBuilder();
+        for (int k = 0; k < rooms.size(); k++) {
+            if (k > 0) cells.append(" ");
+            cells.append("<span class=\"r\">")
+                    .append(styleRoom(rooms.get(k), building, slotIdx, nSlot, slots, allDay))
+                    .append("</span>");
+        }
+
+        String head;
+        String cls;
+        if (floor > 0) {
+            head = floor + "F";
+            cls = "floor";
+        } else if (floor == 0) {
+            head = "其他";
+            cls = "floor";
+        } else {
+            head = building;
+            cls = "building";
+        }
+        JSONArray row = new JSONArray();
+        row.put(head).put(cls).put(cells.toString());
+        return row;
     }
 
     /** null 安全：取某天某时段的某楼栋房间数组 */
@@ -855,6 +1140,17 @@ public class MainActivity extends Activity {
         return (c.get(Calendar.MONTH) + 1) + "/" + c.get(Calendar.DAY_OF_MONTH);
     }
 
+    /** 当天 00:00:00.000 —— 用来算「目标日期距今天几天」 */
+    private static long startOfDay(long ms) {
+        Calendar c = Calendar.getInstance(Locale.CHINA);
+        c.setTimeInMillis(ms);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
     /** 当前应显示的周次 = 按开学日期推算 + 用户手动偏移 */
     private int currentWeek() {
         if (scheduleData == null) return 1;
@@ -898,12 +1194,7 @@ public class MainActivity extends Activity {
         tvSchedule.setTextColor(room ? 0xFF9AA2B4 : 0xFF1B4D8F);
         if (sameTab && tab == TAB_CLASSROOM) return;
 
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
-        btnRefreshData.setVisibility(View.GONE);
-        btnRefresh.setVisibility(View.GONE);
-        btnImport.setVisibility(View.GONE);
-        btnReimport.setVisibility(View.GONE);
+        // 切 Tab 后按钮状态由下面的渲染路径各自设定，这里不用预设
 
         if (room) {
             String cached = ResultCache.load(this);
@@ -916,8 +1207,7 @@ public class MainActivity extends Activity {
                     // 缓存存的是「抓取当天起算」的若干天，隔天再打开首日就不是今天了
                     // 加一句提示，避免把昨天的空教室当成今天的
                     o.put("staleDay", isCacheStaleToday(o));
-                    showHtml(buildHtml(o));
-                    btnRefreshData.setVisibility(View.VISIBLE);
+                    showHtml(buildHtml(o));   // 内部会切到 ROOM_DATA
                     String age = ResultCache.ageText(this);
                     if (ResultCache.isExpired(this)) {
                         statusText.setText("数据已过期（" + age + "），建议刷新");
@@ -937,7 +1227,7 @@ public class MainActivity extends Activity {
                 renderSchedule();
             } else {
                 showScheduleHtml(emptyScheduleHtml());
-                btnImport.setVisibility(View.VISIBLE);
+                applyUi(UiState.SCHEDULE_EMPTY);
                 statusText.setText("还没有课表，点「导入课表」");
             }
         }
@@ -1132,9 +1422,7 @@ public class MainActivity extends Activity {
         if (scheduleData == null) return;
         try {
             showScheduleHtml(buildScheduleHtml(scheduleData, currentWeek()));
-            btnImport.setVisibility(View.GONE);
-            btnReimport.setVisibility(View.VISIBLE);
-            btnBack.setVisibility(View.GONE);
+            applyUi(UiState.SCHEDULE_DATA);
         } catch (Exception e) {
             statusText.setText("课表渲染失败：" + e.getMessage());
         }
@@ -1143,8 +1431,6 @@ public class MainActivity extends Activity {
     private void showScheduleHtml(String html) {
         loginView.setVisibility(View.GONE);
         resultView.setVisibility(View.VISIBLE);
-        btnQuery.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
 
@@ -1270,23 +1556,77 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    /** 课表 → 空教室：算出该课所在日期，切到空教室页查这一时段 */
+    /**
+     * 空教室接口返回的时段定义，与 inject.js 的 SLOTS 一一对应。
+     *
+     * ⚠️ 这是「查询时段」，不是「课表节次」：一个时段含 2 节，且第 5 项
+     * 「昼间1-8节」是教务为了显示而混进来的合并项，跨度 8 节。
+     * 所以**绝不能拿课表的节次直接当它的下标** —— 第 2 节会指到「上午3-4节」。
+     */
+    private static final int[][] FREE_SLOTS = {
+            {1, 2}, {3, 4}, {5, 6}, {7, 8}, {1, 8}, {9, 10}, {11, 12}
+    };
+
+    /**
+     * 课表节次 → 空教室时段下标。
+     *
+     * 取「覆盖该节次、且跨度最小」的那个时段；跨度最小保证了第 5 节命中
+     * 「下午5-6节」而不是跨度 8 的「昼间1-8节」。找不到返回 -1。
+     */
+    private static int slotIndexOf(int section) {
+        int best = -1, bestSpan = Integer.MAX_VALUE;
+        for (int i = 0; i < FREE_SLOTS.length; i++) {
+            int tb = FREE_SLOTS[i][0], te = FREE_SLOTS[i][1];
+            if (section >= tb && section <= te) {
+                int span = te - tb + 1;
+                if (span < bestSpan) {
+                    bestSpan = span;
+                    best = i;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 课表 → 空教室：点到某天的空白时段，直接查那一节的空闲教室。
+     *
+     * 只查被点的那一节（一次请求，约 1.5 秒），结果页把那一条置顶并高亮 ——
+     * 用户点「第 3 节」，就该立刻看到第 3 节的空教室，而不是一整天 7 个时段里去找。
+     */
     private void jumpToFreeRooms(int day, int startSection, int endSection) {
         if (scheduleData == null) return;
         if (day < 1 || day > 7) return;
 
         int week = currentWeek();
         long target = weekMonday(week) + (day - 1) * DAY_MS;
-        String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " "
-                + startSection + "-" + endSection + " 节";
+        int offset = (int) Math.round((target - startOfDay(System.currentTimeMillis())) / (double) DAY_MS);
+
+        // 把课表节次折到「查询时段」上，再拿时段自己的节次区间去查
+        int slotIdx = slotIndexOf(startSection);
+        int qb = startSection, qe = endSection;
+        if (slotIdx >= 0) {
+            qb = FREE_SLOTS[slotIdx][0];
+            qe = FREE_SLOTS[slotIdx][1];
+        } else if (qe < qb) {
+            qe = qb;
+        }
+
+        String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " " + qb + "-" + qe + " 节";
 
         // 切到空教室 Tab（复用 switchTab，保证按钮显隐与 Tab 高亮不会两处漂移）
         if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
-        else restoreRoomButtons();
+        else applyIdleUi();
 
+        highlightDate = dateStr(target);
+        highlightTb = qb;
+        singleMode = true;
+        singleWeekday = WD_CN[day - 1];
+
+        // 过去的日子也能查（单时段接口不受「从今天起算」限制），所以不需要回退分支
         singleDate = dateStr(target);
-        singleTb = startSection;
-        singleTe = endSection;
+        singleTb = qb;
+        singleTe = qe;
         singleLabel = label;
         pendingSingle = true;
         statusText.setText("正在查询 " + label + " 的空教室…");
@@ -1294,11 +1634,29 @@ public class MainActivity extends Activity {
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
-    /** 空教室 Tab 的顶栏按钮基线状态（清掉课表遗留的「重新导入」等按钮） */
-    private void restoreRoomButtons() {
-        btnImport.setVisibility(View.GONE);
-        btnReimport.setVisibility(View.GONE);
-        btnBack.setVisibility(View.GONE);
+    /**
+     * 单时段视图里换一组时段重查（结果页顶部的快捷按钮）。
+     *
+     * 日期不变，只换节次区间 —— 这样用户在「第 3-4 节」看完，想再看看「第 5-6 节」，
+     * 直接在结果页点一下就行，不用退回课表再点一次。
+     */
+    private void switchSlot(int slotIdx) {
+        if (slotIdx < 0 || slotIdx >= FREE_SLOTS.length) return;
+        if (singleDate.isEmpty()) return;
+
+        int qb = FREE_SLOTS[slotIdx][0];
+        int qe = FREE_SLOTS[slotIdx][1];
+        String label = singleDate + " " + singleWeekday + " " + qb + "-" + qe + " 节";
+
+        highlightTb = qb;
+        singleTb = qb;
+        singleTe = qe;
+        singleLabel = label;
+        pendingSingle = true;
+
+        statusText.setText("正在查询 " + qb + "-" + qe + " 节的空教室…");
+        setBusy(true);
+        loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
 
     /* ---------- 课程详情 ---------- */

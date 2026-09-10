@@ -5,12 +5,19 @@
     android:orientation="vertical"
     android:background="#f5f6f8">
 
+    <!--
+      顶栏：左侧状态文字，右侧拟物化图标按钮。
+      按钮显隐由 MainActivity.applyUi(UiState) 一处统一控制。
+    -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="8dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="9dp"
+        android:paddingBottom="9dp"
         android:background="#ffffff"
         android:elevation="2dp">
 
@@ -19,62 +26,71 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginEnd="10dp"
             android:text="教务系统"
             android:textSize="13sp"
             android:textColor="#555"
-            android:maxLines="2" />
+            android:maxLines="2"
+            android:ellipsize="end" />
 
-        <Button
-            android:id="@+id/btnQuery"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="查空教室"
-            android:textSize="13sp"
-            android:minHeight="36dp" />
-
-        <Button
+        <!-- 返回教务（次要） -->
+        <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="返回教务"
-            android:textSize="13sp"
-            android:minHeight="36dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_skeu_grey"
+            android:src="@drawable/ic_skeu_back"
+            android:scaleType="centerInside"
+            android:contentDescription="返回教务"
             android:visibility="gone" />
 
-        <Button
+        <!-- 查空教室（主操作） -->
+        <ImageButton
+            android:id="@+id/btnQuery"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_skeu_blue"
+            android:src="@drawable/ic_skeu_search"
+            android:scaleType="centerInside"
+            android:contentDescription="查空教室" />
+
+        <!-- 刷新数据（主操作） -->
+        <ImageButton
             android:id="@+id/btnRefreshData"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="刷新数据"
-            android:textSize="13sp"
-            android:minHeight="36dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_skeu_blue"
+            android:src="@drawable/ic_skeu_refresh"
+            android:scaleType="centerInside"
+            android:contentDescription="刷新数据"
             android:visibility="gone" />
 
-        <Button
+        <!-- 导入课表（主操作） -->
+        <ImageButton
             android:id="@+id/btnImport"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="导入课表"
-            android:textSize="13sp"
-            android:minHeight="36dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_skeu_blue"
+            android:src="@drawable/ic_skeu_import"
+            android:scaleType="centerInside"
+            android:contentDescription="导入课表"
             android:visibility="gone" />
 
-        <Button
+        <!-- 重新导入（次要） -->
+        <ImageButton
             android:id="@+id/btnReimport"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="重新导入"
-            android:textSize="13sp"
-            android:minHeight="36dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/btn_skeu_grey"
+            android:src="@drawable/ic_skeu_import"
+            android:scaleType="centerInside"
+            android:contentDescription="重新导入课表"
             android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btnRefresh"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="刷新"
-            android:textSize="13sp"
-            android:minHeight="36dp" />
     </LinearLayout>
 
     <ProgressBar
