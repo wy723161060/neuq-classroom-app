@@ -37,7 +37,13 @@
           空教室页顶栏的两个动作（用户要求放在空教室表上方）：
             刷新 —— 重新查询空闲教室（没登录会先引导登录）
             导入 —— 从教务导入课表
-          都是无底色纯图标，和整体顶栏观感一致。
+
+          无底色 + 蓝色图标。
+          注意必须在这里用 tint 上色：两个图标本身是白色填充
+          （ic_skeu_refresh / ic_skeu_import 当年是给蓝底按钮画的），
+          去掉底板之后不 tint 就是白底白图标，肉眼完全看不见。
+          也不能改 vector 的 fillColor —— ic_skeu_refresh 还被
+          内嵌浏览器标题栏的「刷新网页」按钮复用，那里是蓝底白图标。
         -->
         <ImageButton
             android:id="@+id/btnRefreshData"
@@ -46,6 +52,7 @@
             android:layout_marginStart="6dp"
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_refresh"
+            android:tint="#1B4D8F"
             android:scaleType="centerInside"
             android:contentDescription="刷新空教室"
             android:visibility="gone" />
@@ -57,6 +64,7 @@
             android:layout_marginStart="6dp"
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_import"
+            android:tint="#1B4D8F"
             android:scaleType="centerInside"
             android:contentDescription="导入课表"
             android:visibility="gone" />
