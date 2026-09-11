@@ -10,8 +10,8 @@ android {
         applicationId "com.wanyuea.neuqclassroom"
         minSdk 26
         targetSdk 34
-        versionCode 27
-        versionName "3.8.3"
+        versionCode 28
+        versionName "3.8.4"
     }
 
     signingConfigs {
@@ -42,3 +42,41 @@ android {
 }
 
 // 不依赖任何第三方库，构建更快、体积更小
+
+/*
+ * 发版前自动校验日期逻辑（tools/check-dates.js）。
+ *
+ * 起因：v3.8.3 课表页「今天」高亮整列偏一天（周五被标成周四），
+ * 根因是星期换算漏了 +1。这类错误肉眼很难发现，所以做成构建时的硬门槛：
+ * 只要 tools/check-dates.js 断言失败，assembleRelease 直接中断。
+ *
+ * 找不到 node 时只警告不阻断 —— 不因为环境缺 node 就让整个构建挂掉。
+ */
+tasks.configureEach { t ->
+    if (t.name == "preReleaseBuild") {
+        t.doFirst {
+            def script = rootProject.file("tools/check-dates.js")
+            if (!script.exists()) {
+                logger.warn("[check-dates] 跳过：找不到 " + script)
+                return
+            }
+            def nodeBin = System.getenv("NCQ_NODE") ?: "node"
+            try {
+                def out = new ByteArrayOutputStream()
+                def result = exec {
+                    commandLine nodeBin, script.absolutePath
+                    standardOutput = out
+                    errorOutput = out
+                    ignoreExitValue = true
+                }
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                        "[check-dates] 日期逻辑校验未通过，已阻止出包：\n" + out.toString("UTF-8"))
+                }
+                logger.lifecycle("[check-dates] 日期逻辑校验通过")
+            } catch (IOException e) {
+                logger.warn("[check-dates] 跳过：未找到 node（可用 NCQ_NODE 指定路径）")
+            }
+        }
+    }
+}

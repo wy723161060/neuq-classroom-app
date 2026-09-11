@@ -18,3 +18,10 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 出包产物与临时验证脚本（tools/ 下的校验脚本要提交，见下）
+outputs/
+tmp_read/
+
+# 临时文件
+*.bak_check

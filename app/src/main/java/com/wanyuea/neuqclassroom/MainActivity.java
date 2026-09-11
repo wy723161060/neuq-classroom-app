@@ -3733,14 +3733,15 @@ public class MainActivity extends Activity {
             visCols.add(7);
         }
 
-        // 今天所在的列（真实星期 - 1），不在本周 / 被隐藏则为 -1
-        int todayCol = -1;
+        // 今天所在的星期（1=周一 … 7=周日）；不在本周则为 -1。
+        // 渲染时遍历 visCols，被隐藏的列不会输出，所以这里无需再管显隐。
         int todayDay = -1;
         if (mondayOf(System.currentTimeMillis()) == weekMon) {
-            Calendar tc = Calendar.getInstance(Locale.CHINA);
-            int dow = tc.get(Calendar.DAY_OF_WEEK);
-            todayDay = (dow == Calendar.SUNDAY) ? 7 : (dow - Calendar.MONDAY);
-            if (visCols.contains(todayDay)) todayCol = todayDay - 1;
+            // 复用 weekdayOf（1=周一 … 7=周日）。
+            // ⚠️ 早先这里手写成 `dow - Calendar.MONDAY`，漏了 +1：
+            // Calendar 里 MONDAY=2，周五的 dow=6 → 算出 4（周四），
+            // 于是周一到周六的高亮整整偏了一列，周四被当成「今天」。
+            todayDay = weekdayOf(System.currentTimeMillis());
         }
 
         // ── 调课：本地调整 ────────────────────────────────────────────
