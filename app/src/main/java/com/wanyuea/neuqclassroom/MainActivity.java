@@ -268,16 +268,38 @@ public class MainActivity extends Activity {
     private static final String CRED_HOOK_JS =
             "(function(){if(window.__nqHook)return;window.__nqHook=1;"
             + "var last=0;"
-            + "var send=function(){"
-            + "try{if(Date.now()-last<2500)return;last=Date.now();"
-            + "var u=document.querySelector('#username'),p=document.querySelector('#password');"
-            + "if(u&&p&&u.value&&p.value)Android.onCapturedCredentials(u.value,p.value);"
-            + "}catch(e){}};"
+            + "function vis(e){return e&&(e.offsetWidth>0||e.offsetHeight>0);}"
+            + "function meta(e){return ((e.id||'')+' '+(e.name||'')+' '+(e.placeholder||'')).toLowerCase();}"
+            + "function bad(m){return m.indexOf('cap')>=0||m.indexOf('code')>=0||m.indexOf('verif')>=0;}"
+            // 通用字段识别：不管登录页是统一身份认证还是 WebVPN 门户自己的表单，
+            // 主文档找不到就扫同源 iframe（WebVPN 常把登录页放进框架里）
+            + "function docs(){var a=[document],f=document.querySelectorAll('iframe'),i;"
+            + "for(i=0;i<f.length;i++){try{var d=f[i].contentDocument;if(d)a.push(d);}catch(e){}}return a;}"
+            + "function send(){"
+            + "try{"
+            + "if(Date.now()-last<2500)return;"
+            + "var ds=docs(),k,i,pw=null,f=null;"
+            + "for(k=0;k<ds.length;k++){"
+            + "var ins=ds[k].querySelectorAll('input');"
+            + "for(i=0;i<ins.length;i++){"
+            + "var t=(ins[i].getAttribute('type')||'text').toLowerCase();"
+            + "if(t==='password'&&vis(ins[i])&&ins[i].value){pw=ins[i];break;}}"
+            + "if(pw){f=pw.form||ds[k];break;}}"
+            + "if(!pw)return;"
+            + "var cand=(f||document).querySelectorAll('input'),u=null;"
+            + "for(i=0;i<cand.length;i++){"
+            + "var e=cand[i],t2=(e.getAttribute('type')||'text').toLowerCase();"
+            + "if(t2!=='text'&&t2!=='tel'&&t2!=='email'&&t2!=='')continue;"
+            + "if(!vis(e))continue;if(bad(meta(e)))continue;u=e;break;}"
+            + "if(!u||!u.value)return;"
+            + "last=Date.now();"
+            + "Android.onCapturedCredentials(u.value,pw.value);"
+            + "}catch(e){}}"
             + "document.addEventListener('submit',send,true);"
-            // 点击委托：只认「提交类按钮」，避免点「忘记密码」等链接时把半截密码记下来
+            // 点击委托：只认提交类按钮，避免点「忘记密码」等把半截密码记下来
             + "document.addEventListener('click',function(e){"
             + "var t=e.target;"
-            + "if(t&&t.closest&&t.closest('.submitBtn,button[type=submit],input[type=submit],#login-button'))send();"
+            + "if(t&&t.closest&&t.closest('button,input[type=submit],.submitBtn,#login-button'))send();"
             + "},true);"
             + "})()";
 
@@ -804,8 +826,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void onAutoLoginResult(final String code) {
             mainHandler.post(() -> {
-                if ("filled".equals(code)) {
-                    statusText.setText("正在自动登录…");
+                if (code != null && code.startsWith("filled")) {
+                    // 记下这次是「按统一身份认证 id」还是「通用表单识别」命中的，便于排查
+                    boolean generic = code.endsWith(":generic");
+                    statusText.setText(generic ? "正在自动登录（通用表单识别）…" : "正在自动登录…");
                 } else if ("captcha".equals(code)) {
                     captchaHold = true;
                     statusText.setText("登录需要验证码，请手动完成");
@@ -813,12 +837,18 @@ public class MainActivity extends Activity {
                             "本次登录需要验证码，请手动输入完成登录", Toast.LENGTH_LONG).show();
                 } else if ("noform".equals(code)) {
                     statusText.setText("自动登录未找到登录框 · 请手动登录");
-                } else if ("stuck".equals(code)) {
-                    // 填了也点了，但页面没走 —— 多半是密码已改或触发风控
-                    statusText.setText("自动登录提交后未跳转 · 请手动登录，或在「更多」里更新密码");
                     Toast.makeText(MainActivity.this,
-                            "自动登录没有跳转：密码可能已修改。请手动登录，"
-                                    + "或到「更多 → 记住密码并自动登录」里更新密码",
+                            "自动登录没找到登录框：这个登录页的输入框没被识别到，"
+                                    + "请手动登录（欢迎反馈该页面截图以便适配）",
+                            Toast.LENGTH_LONG).show();
+                } else if ("nobutton".equals(code)) {
+                    statusText.setText("自动登录未找到登录按钮 · 请手动登录");
+                } else if ("stuck".equals(code)) {
+                    // 填了也点了，但页面没走 —— 密码改了 / 被风控 / 页面用 AJAX 慢跳
+                    statusText.setText("自动登录已提交但未跳转 · 请手动登录");
+                    Toast.makeText(MainActivity.this,
+                            "自动登录已提交，但登录页没有跳转：请手动登录；"
+                                    + "若每次都这样，到「更多 → 记住密码并自动登录」更新密码",
                             Toast.LENGTH_LONG).show();
                 }
                 // 其他值（等待中）不打扰用户
@@ -2626,18 +2656,65 @@ public class MainActivity extends Activity {
         return "(function(){"
                 + "if(window.__nqAuto)return;"
                 + "window.__nqAuto=1;"
+                + "var PASSFILL=" + JSONObject.quote(pass) + ";"
                 + "function report(code){try{Android.onAutoLoginResult(code);}catch(e){}}"
+                + "function vis(e){return e&&(e.offsetWidth>0||e.offsetHeight>0);}"
+                + "function meta(e){return ((e.id||'')+' '+(e.name||'')+' '+(e.placeholder||'')).toLowerCase();}"
+                + "function bad(m){return m.indexOf('cap')>=0||m.indexOf('code')>=0||m.indexOf('verif')>=0;}"
+                // WebVPN 可能把登录页放进 iframe：主文档找不到时一并扫同源框架
+                + "function docs(){var a=[document],f=document.querySelectorAll('iframe'),i;"
+                + "for(i=0;i<f.length;i++){try{var d=f[i].contentDocument;if(d)a.push(d);}catch(e){}}return a;}"
+                // 主路径认统一身份认证的具体 id；认不出就通用识别 ——
+                // WebVPN 门户等其它登录页的字段 id 不一样，写死 id 就会「未找到登录框」
+                + "function findFields(){"
+                + "var ds=docs(),k,i;"
+                + "for(k=0;k<ds.length;k++){"
+                + "var d=ds[k];"
+                + "var f=d.querySelector('#casLoginForm'),"
+                + "u=d.querySelector('#username'),p=d.querySelector('#password');"
+                + "if(f&&u&&p&&vis(p))return{f:f,u:u,p:p,kind:'cas'};"
+                + "}"
+                + "for(k=0;k<ds.length;k++){"
+                + "var d2=ds[k],ins=d2.querySelectorAll('input'),pw=null;"
+                + "for(i=0;i<ins.length;i++){"
+                + "var t=(ins[i].getAttribute('type')||'text').toLowerCase();"
+                + "if(t==='password'&&vis(ins[i])){pw=ins[i];break;}}"
+                + "if(!pw)continue;"
+                + "var f2=pw.form||d2.querySelector('form')||d2;"
+                + "var cand=f2.querySelectorAll('input'),user=null;"
+                + "for(i=0;i<cand.length;i++){"
+                + "var e=cand[i],t2=(e.getAttribute('type')||'text').toLowerCase();"
+                + "if(t2!=='text'&&t2!=='tel'&&t2!=='email'&&t2!=='')continue;"
+                + "if(!vis(e))continue;if(bad(meta(e)))continue;user=e;break;}"
+                + "if(user)return{f:f2,u:user,p:pw,kind:'generic'};"
+                + "}"
+                + "return null;"
+                + "}"
+                + "function hasCaptcha(){"
+                + "var ds=docs(),k,i;"
+                + "for(k=0;k<ds.length;k++){"
+                + "var ins=ds[k].querySelectorAll('input');"
+                + "for(i=0;i<ins.length;i++){"
+                + "var e=ins[i];if(!vis(e))continue;"
+                + "var t=(e.getAttribute('type')||'').toLowerCase();if(t==='hidden')continue;"
+                + "if(bad(meta(e)))return true;}"
+                + "}"
+                + "var cd=document.querySelector('#cpatchaDiv');"
+                + "return !!(cd&&vis(cd));"
+                + "}"
+                + "function submit(f){"
+                + "var b=f.querySelector&&f.querySelector('.submitBtn,button[type=submit],input[type=submit],#login-button,button');"
+                + "if(b){b.click();return true;}"
+                + "if(f.requestSubmit){f.requestSubmit();return true;}"
+                + "if(f.submit){f.submit();return true;}"
+                + "return false;"
+                + "}"
                 + "function attempt(){"
-                + "var f=document.querySelector('#casLoginForm'),"
-                + "u=document.querySelector('#username'),p=document.querySelector('#password');"
-                + "if(!f||!u||!p)return null;"
-                + "var cap=document.querySelector('#cpatchaDiv');"
-                + "if(cap&&(cap.offsetWidth>0||cap.offsetHeight>0))return 'captcha';"
-                + "u.value=" + JSONObject.quote(user) + ";"
-                + "p.value=" + JSONObject.quote(pass) + ";"
-                + "var b=f.querySelector('.submitBtn');"
-                + "if(b){b.click();}else{f.submit();}"
-                + "return 'filled';"
+                + "var o=findFields();if(!o)return null;"
+                + "if(hasCaptcha())return 'captcha';"
+                + "o.u.value=" + JSONObject.quote(user) + ";"
+                + "o.p.value=PASSFILL;"
+                + "return submit(o.f)?('filled:'+o.kind):'nobutton';"
                 + "}"
                 + "var r=attempt();"
                 + "if(r){report(r);blur();return;}"
@@ -2647,12 +2724,13 @@ public class MainActivity extends Activity {
                 + "var r2=attempt();"
                 + "if(r2){clearInterval(timer);report(r2);blur();}"
                 + "},400);"
-                // 提交后 6 秒还停在登录页 = 表单提交没生效（或被风控拦下），
-                // 明确报出来，用户就不用对着登录页猜「到底自不自动」。
-                // 6 秒是给 WebVPN 的多跳重定向留的余量，太短会误报。
+                // 提交后 8 秒仍停在同一文档、登录框还在、密码还是我们填的值 =
+                // 提交没生效（密码已改或触发风控）。用 8 秒是给 WebVPN 多跳重定向
+                // 与某些 AJAX 登录留余量，太短会误报。
                 + "function blur(){setTimeout(function(){"
-                + "if(document.querySelector('#casLoginForm')&&document.querySelector('#password'))report('stuck');"
-                + "},6000);}"
+                + "var o=findFields();"
+                + "if(o&&o.p&&o.p.value===PASSFILL)report('stuck');"
+                + "},8000);}"
                 + "})()";
     }
 
