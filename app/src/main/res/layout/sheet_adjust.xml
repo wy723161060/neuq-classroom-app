@@ -282,9 +282,8 @@
                 android:textColor="#C0392B" />
 
             <!-- ④ 整天调课：节假日调休用。
-                 学校的调课通知通常是「X月X日（周N）上周M的课」——
-                 一整天的课整体搬到另一天，而且经常跨周，所以这里的
-                 源/目标都要能选周次，和上面「单节课调整」互相独立。 -->
+                 学校的调课通知通常直接说日期 ——「10月1日（周四）的课调到9月28日（周日）」，
+                 所以这里让人选日期，不由用户自己换算第几周星期几。 -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -300,100 +299,72 @@
                 android:layout_marginTop="6dp"
                 android:orientation="vertical"
                 android:background="@drawable/cache_card_bg"
-                android:padding="14dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="把这一天的所有课"
-                    android:textSize="12.5sp"
-                    android:textColor="#55617A" />
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="6dp">
 
                 <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:id="@+id/adjDmSrcRow"
+                    style="@style/AdjDateRow">
 
-                    <Spinner
-                        android:id="@+id/adjDmSrcWeek"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1.2"
-                        android:spinnerMode="dialog"
-                        android:popupBackground="#FFFFFF" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
-                        android:text="周"
-                        android:textSize="12.5sp"
-                        android:textColor="#55617A" />
-
-                    <Spinner
-                        android:id="@+id/adjDmSrcDay"
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:spinnerMode="dialog"
-                        android:popupBackground="#FFFFFF" />
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/AdjDateLabel"
+                            android:text="把这一天的课全部调走" />
+
+                        <TextView
+                            android:id="@+id/adjDmSrcText"
+                            style="@style/AdjDateValue"
+                            android:text="点击选择日期" />
+                    </LinearLayout>
+
+                    <TextView style="@style/MoreArrow" />
                 </LinearLayout>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="整体调到 ↓"
-                    android:textSize="12.5sp"
-                    android:textColor="#55617A" />
+                <View style="@style/MoreDivider" />
 
                 <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:id="@+id/adjDmDstRow"
+                    style="@style/AdjDateRow">
 
-                    <Spinner
-                        android:id="@+id/adjDmDstWeek"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1.2"
-                        android:spinnerMode="dialog"
-                        android:popupBackground="#FFFFFF" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
-                        android:text="周"
-                        android:textSize="12.5sp"
-                        android:textColor="#55617A" />
-
-                    <Spinner
-                        android:id="@+id/adjDmDstDay"
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:spinnerMode="dialog"
-                        android:popupBackground="#FFFFFF" />
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/AdjDateLabel"
+                            android:text="整体调到这一天" />
+
+                        <TextView
+                            android:id="@+id/adjDmDstText"
+                            style="@style/AdjDateValue"
+                            android:text="点击选择日期" />
+                    </LinearLayout>
+
+                    <TextView style="@style/MoreArrow" />
                 </LinearLayout>
 
                 <TextView
                     android:id="@+id/adjDmConfirm"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:layout_marginTop="8dp"
                     android:background="@drawable/btn_outline_blue"
                     android:gravity="center"
-                    android:paddingTop="10dp"
-                    android:paddingBottom="10dp"
+                    android:paddingTop="11dp"
+                    android:paddingBottom="11dp"
                     android:text="确认整天调课"
-                    android:textSize="13.5sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="#1B4D8F" />
             </LinearLayout>

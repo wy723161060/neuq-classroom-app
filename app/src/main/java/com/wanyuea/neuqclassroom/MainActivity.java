@@ -2738,6 +2738,71 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    /* ---------- 日期选择与换算（整日调休用） ---------- */
+
+    /** 日期选择回调 */
+    private interface DatePicked {
+        void onDate(long ms);
+    }
+
+    /**
+     * 通用日期选择器：复用「开学日期」那套滚轮组件（年/月/日，不用日历网格）。
+     * 整日调休直接选日期 —— 学校的调课通知就是按日期说的，不该让用户自己换算周次。
+     */
+    private void pickDate(String title, long initialMs, DatePicked cb) {
+        View v = getLayoutInflater().inflate(R.layout.dialog_date_spinner, null);
+        DatePicker dp = v.findViewById(R.id.datePicker);
+        useSpinner(dp);
+        Calendar c0 = Calendar.getInstance(Locale.CHINA);
+        c0.setTimeInMillis(initialMs);
+        dp.updateDate(c0.get(Calendar.YEAR), c0.get(Calendar.MONTH),
+                c0.get(Calendar.DAY_OF_MONTH));
+
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(v)
+                .setPositiveButton("确定", (d, w) -> {
+                    Calendar c = Calendar.getInstance(Locale.CHINA);
+                    c.set(dp.getYear(), dp.getMonth(), dp.getDayOfMonth(), 0, 0, 0);
+                    c.set(Calendar.MILLISECOND, 0);
+                    cb.onDate(c.getTimeInMillis());
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 日期 → 「10-01 周四」 */
+    private static String dateCn(long ms) {
+        return mdStr(ms) + " 周" + wdCn(weekdayOf(ms));
+    }
+
+    /** 星期几：1=周一 … 7=周日 */
+    private static int weekdayOf(long ms) {
+        Calendar c = Calendar.getInstance(Locale.CHINA);
+        c.setTimeInMillis(ms);
+        int dow = c.get(Calendar.DAY_OF_WEEK);
+        return (dow == Calendar.SUNDAY) ? 7 : (dow - Calendar.MONDAY + 1);
+    }
+
+    /** 日期 → 学期内 {周次, 星期}；不在本学期范围内返回 null */
+    private int[] dateToWeekDay(String sid, long ms) {
+        long start = termStartMs(sid);
+        if (start <= 0) return null;
+        long days = Math.round((startOfDay(ms) - startOfDay(start)) / (double) DAY_MS);
+        if (days < 0) return null;
+        int week = (int) (days / 7) + 1;
+        int day = (int) (days % 7) + 1;
+        if (week > Math.max(maxWeekOfView(), 20)) return null;
+        return new int[]{week, day};
+    }
+
+    /** 周次+星期 → 「10-01 周四」（没设开学日期时退回「第N周 周X」） */
+    private String dateOfWeekDay(int week, int day) {
+        long start = scheduleData == null ? 0 : termStartMs(scheduleData.optString("semesterId", ""));
+        if (start <= 0) return "第" + week + "周 周" + wdCn(day);
+        return dateCn(weekMonday(week) + (day - 1) * DAY_MS);
+    }
+
     /** 翻周只影响本次会话，不写盘 —— 下次打开 App 仍从本周开始 */
     private void shiftWeek(int delta) {
         if (scheduleData == null) return;
@@ -3097,32 +3162,35 @@ public class MainActivity extends Activity {
         startSp.setAdapter(spinnerAdapter(sections));
         endSp.setAdapter(spinnerAdapter(sections));
 
-        // ── ④ 整天调课（节假日调休） ──
-        final Spinner dmSrcWeek = sheet.findViewById(R.id.adjDmSrcWeek);
-        final Spinner dmSrcDay = sheet.findViewById(R.id.adjDmSrcDay);
-        final Spinner dmDstWeek = sheet.findViewById(R.id.adjDmDstWeek);
-        final Spinner dmDstDay = sheet.findViewById(R.id.adjDmDstDay);
-        int maxW = Math.max(maxWeekOfView(), week + 1);
-        String[] weekLabels = new String[maxW];
-        for (int i = 0; i < maxW; i++) weekLabels[i] = "第 " + (i + 1) + " 周";
-        dmSrcWeek.setAdapter(spinnerAdapter(weekLabels));
-        dmDstWeek.setAdapter(spinnerAdapter(weekLabels));
-        dmSrcDay.setAdapter(spinnerAdapter(days));
-        dmDstDay.setAdapter(spinnerAdapter(days));
-        // 默认值给个最贴近调休场景的：本周今天 → 本周周六（多数调休都是往周末搬）
-        int todayDow = Calendar.getInstance(Locale.CHINA).get(Calendar.DAY_OF_WEEK);
-        int todayIdx = (todayDow == Calendar.SUNDAY) ? 6 : (todayDow - Calendar.MONDAY);
-        dmSrcWeek.setSelection(Math.min(week - 1, maxW - 1));
-        dmSrcDay.setSelection(todayIdx);
-        dmDstWeek.setSelection(Math.min(week - 1, maxW - 1));
-        dmDstDay.setSelection(5);
+        // ── ④ 整天调课（节假日调休）：直接选日期，不让用户自己换算周次 ──
+        final TextView dmSrcText = sheet.findViewById(R.id.adjDmSrcText);
+        final TextView dmDstText = sheet.findViewById(R.id.adjDmDstText);
+        // 用数组持有选中日期（lambda 里要改值）；默认：本周周一 → 本周周六
+        final long[] srcMs = {weekMonday(week)};
+        final long[] dstMs = {weekMonday(week) + 5 * DAY_MS};
+        dmSrcText.setText(dateCn(srcMs[0]));
+        dmDstText.setText(dateCn(dstMs[0]));
+
+        sheet.findViewById(R.id.adjDmSrcRow).setOnClickListener(v ->
+                pickDate("把哪一天的课调走？", srcMs[0], ms -> {
+                    srcMs[0] = ms;
+                    dmSrcText.setText(dateCn(ms));
+                }));
+        sheet.findViewById(R.id.adjDmDstRow).setOnClickListener(v ->
+                pickDate("整体调到哪一天？", dstMs[0], ms -> {
+                    dstMs[0] = ms;
+                    dmDstText.setText(dateCn(ms));
+                }));
 
         // 确认整天调课
         sheet.findViewById(R.id.adjDmConfirm).setOnClickListener(v -> {
-            int srcWeek = dmSrcWeek.getSelectedItemPosition() + 1;
-            int srcDay = dmSrcDay.getSelectedItemPosition() + 1;
-            int dstWeek = dmDstWeek.getSelectedItemPosition() + 1;
-            int dstDay = dmDstDay.getSelectedItemPosition() + 1;
+            int[] src = dateToWeekDay(schedId, srcMs[0]);
+            int[] dst = dateToWeekDay(schedId, dstMs[0]);
+            if (src == null || dst == null) {
+                Toast.makeText(this, "日期不在本学期范围内，请先设置开学日期", Toast.LENGTH_LONG).show();
+                return;
+            }
+            int srcWeek = src[0], srcDay = src[1], dstWeek = dst[0], dstDay = dst[1];
             if (srcWeek == dstWeek && srcDay == dstDay) {
                 Toast.makeText(this, "目标日期和来源相同，请重新选择", Toast.LENGTH_SHORT).show();
                 return;
@@ -3140,8 +3208,8 @@ public class MainActivity extends Activity {
             a.targetWeek = dstWeek;
             a.createdAt = System.currentTimeMillis();
             AdjustCache.put(this, a);
-            Toast.makeText(this, "已调休：第" + srcWeek + "周 周" + WD_CN[srcDay - 1]
-                    + " 全天 → 第" + dstWeek + "周 周" + WD_CN[dstDay - 1], Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "已调休：" + dateCn(srcMs[0]) + " → " + dateCn(dstMs[0]),
+                    Toast.LENGTH_LONG).show();
             renderSchedule();
             fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
         });
@@ -3392,8 +3460,9 @@ public class MainActivity extends Activity {
     /** 已有记录的一句话描述：「每周 · 高等数学：原 周四 3-4 节 → 周六 5-6 节」 */
     private String adjustText(AdjustCache.Adjust a) {
         if (AdjustCache.SCOPE_DAY.equals(a.scope)) {
-            return "第 " + a.week + " 周 周" + wdCn(a.srcDay) + " 全天 → 第 "
-                    + a.targetWeek + " 周 周" + wdCn(a.day) + "（调休）";
+            // 整日调休按日期表述，和学校通知、和用户当初的选择口径一致
+            return "调休 · " + dateOfWeekDay(a.week, a.srcDay) + " 全天 → "
+                    + dateOfWeekDay(a.targetWeek, a.day);
         }
         String scope = AdjustCache.SCOPE_ALL.equals(a.scope) ? "每周" : "第 " + a.week + " 周";
         String from = "周" + wdCn(a.srcDay) + " " + a.srcStart + "-" + a.srcEnd + " 节";
@@ -3558,7 +3627,7 @@ public class MainActivity extends Activity {
             AdjustCache.Adjust dm = dayOut.get(day);
             if (dm != null) {
                 ghost[st - 1][day - 1] = new Ghost(name,
-                        "整体调至 第" + dm.targetWeek + "周 周" + wdCn(dm.day),
+                        "调休至 " + dateOfWeekDay(dm.targetWeek, dm.day),
                         en - st + 1, false);
                 continue;
             }
@@ -3719,13 +3788,13 @@ public class MainActivity extends Activity {
             sb.append("<div class=\"adjsum\"><b>本周调课 · ").append(adjustCount).append(" 条</b>");
             for (AdjustCache.Adjust m : dayMovesOf(week, dayOut, dayIns)) {
                 if (m.week == week) {
-                    sb.append("<div class=\"row\">· 周").append(wdCn(m.srcDay))
-                            .append(" 全天 → 第").append(m.targetWeek).append("周 周")
-                            .append(wdCn(m.day)).append("（调休）</div>");
+                    sb.append("<div class=\"row\">· ").append(dateOfWeekDay(m.week, m.srcDay))
+                            .append(" 全天 → ").append(dateOfWeekDay(m.targetWeek, m.day))
+                            .append("（调休）</div>");
                 } else {
-                    sb.append("<div class=\"row\">· 第").append(m.week).append("周 周")
-                            .append(wdCn(m.srcDay)).append(" 全天 → 本周 周")
-                            .append(wdCn(m.day)).append("（调休）</div>");
+                    sb.append("<div class=\"row\">· ").append(dateOfWeekDay(m.week, m.srcDay))
+                            .append(" 全天 → 本周 ").append(dateOfWeekDay(m.targetWeek, m.day))
+                            .append("（调休）</div>");
                 }
             }
             for (AdjustCache.Adjust a : adjusts) {

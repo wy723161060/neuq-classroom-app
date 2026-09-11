@@ -3,6 +3,30 @@
     <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">#ffffff</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- 全局弹窗统一换成圆角白卡 + 加粗标题（WakeUp 观感的来源之一） -->
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
+    </style>
+
+    <style name="AppDialog" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:windowTitleStyle">@style/AppDialogTitle</item>
+        <item name="android:colorAccent">#1B4D8F</item>
+        <item name="android:buttonBarButtonStyle">@style/AppDialogButton</item>
+    </style>
+
+    <style name="AppDialogTitle">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">#1B1F27</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 弹窗按钮：大字、无全大写、加粗（WakeUp 的按钮是粗体中文） -->
+    <style name="AppDialogButton" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#1B4D8F</item>
+        <item name="android:minWidth">64dp</item>
     </style>
 
     <!--
@@ -121,6 +145,37 @@
         <item name="android:textSize">12sp</item>
         <item name="android:textColor">#8b92a3</item>
         <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 「调课」面板里选日期的行（WakeUp 风的标签 + 值两级排版） -->
+    <style name="AdjDateRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:background">?android:attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="AdjDateLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:textColor">#8B92A3</item>
+    </style>
+
+    <style name="AdjDateValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#1B4D8F</item>
     </style>
 
     <!--

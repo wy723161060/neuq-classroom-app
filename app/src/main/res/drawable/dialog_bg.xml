@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局对话框底色：白色圆角卡片。
+  WakeUp 的整体观感很大程度来自「所有弹窗都是同一张圆角白卡」——
+  这里用主题统一套上去，不用逐个弹窗改背景。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners android:radius="16dp" />
+</shape>
