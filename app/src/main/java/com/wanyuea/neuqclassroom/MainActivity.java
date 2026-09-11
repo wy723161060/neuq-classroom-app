@@ -365,10 +365,10 @@ public class MainActivity extends Activity {
                     if (loginPageSeen && CredentialStore.isEnabled(MainActivity.this)
                             && !CredentialStore.has(MainActivity.this) && !autoLoginMissHintShown) {
                         autoLoginMissHintShown = true;
-                        statusText.setText("自动登录未生效 · 请退出后重新登录一次");
+                        statusText.setText("自动登录未生效 · 请到「更多」里输入一次账号密码");
                         Toast.makeText(MainActivity.this,
-                                "自动登录未生效：这次登录没有被记录。请退出登录后重新登录一次，"
-                                        + "密码就会被记住",
+                                "自动登录还没建立：请到「更多 → 记住密码并自动登录」"
+                                        + "点一下，输入一次账号密码即可",
                                 Toast.LENGTH_LONG).show();
                     }
                 }
@@ -813,6 +813,13 @@ public class MainActivity extends Activity {
                             "本次登录需要验证码，请手动输入完成登录", Toast.LENGTH_LONG).show();
                 } else if ("noform".equals(code)) {
                     statusText.setText("自动登录未找到登录框 · 请手动登录");
+                } else if ("stuck".equals(code)) {
+                    // 填了也点了，但页面没走 —— 多半是密码已改或触发风控
+                    statusText.setText("自动登录提交后未跳转 · 请手动登录，或在「更多」里更新密码");
+                    Toast.makeText(MainActivity.this,
+                            "自动登录没有跳转：密码可能已修改。请手动登录，"
+                                    + "或到「更多 → 记住密码并自动登录」里更新密码",
+                            Toast.LENGTH_LONG).show();
                 }
                 // 其他值（等待中）不打扰用户
             });
@@ -1590,13 +1597,23 @@ public class MainActivity extends Activity {
             statusText.setText("教务系统 · 登录后回课表页点「导入课表」");
         });
 
-        // 记住密码自动登录：开关关掉时问一句「保存的密码删不删」——
-        // 密码留在本机但功能关着，容易让人误以为已经删干净了
+        // 记住密码自动登录（v3.8.2 换方案）：
+        // 账密由用户在本机 App 里明确输入一次，不再依赖从登录页抓 ——
+        // 登录页被 WebVPN 改写、DOM 随时重建，抓取链路任何一环断掉都是静默失败，
+        // 用户只能看到「不生效」。直接输入链路最短、最可控。
         Switch swAuto = morePage.findViewById(R.id.swAutoLogin);
         swAuto.setChecked(CredentialStore.isEnabled(this));
         swAuto.setOnCheckedChangeListener((b, on) -> {
-            CredentialStore.setEnabled(MainActivity.this, on);
-            if (!on) {
+            if (on) {
+                CredentialStore.setEnabled(MainActivity.this, true);
+                if (CredentialStore.has(this)) {
+                    Toast.makeText(this, "已开启 · 下次会话过期时自动登录", Toast.LENGTH_SHORT).show();
+                    refreshMorePage();
+                } else {
+                    askCredentials("输入一次账号密码");
+                }
+            } else {
+                CredentialStore.setEnabled(MainActivity.this, false);
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("关闭自动登录")
                         .setMessage("已保存的账号密码要一起删除吗？")
@@ -1608,10 +1625,15 @@ public class MainActivity extends Activity {
                         })
                         .setNegativeButton("保留", (d, w) -> refreshMorePage())
                         .show();
+            }
+        });
+
+        // 点这一行 = 重新输入 / 清除已保存的账密
+        morePage.findViewById(R.id.rowAutoLogin).setOnClickListener(v -> {
+            if (CredentialStore.has(this)) {
+                askCredentials("更新账号密码");
             } else {
-                Toast.makeText(MainActivity.this,
-                        "已开启 · 下次手动登录时自动记住密码", Toast.LENGTH_LONG).show();
-                refreshMorePage();
+                askCredentials("输入一次账号密码");
             }
         });
 
@@ -1648,15 +1670,17 @@ public class MainActivity extends Activity {
         }
         tvVer.setText("版本 " + (ver.isEmpty() ? "-" : ver));
 
-        // 自动登录开关的说明文字：说清楚现在记没记、记的是哪个账号
+        // 自动登录这一行的说明：说清楚现在记没记、记的是哪个账号
         TextView subAuto = morePage.findViewById(R.id.subAutoLogin);
-        if (CredentialStore.isEnabled(this)) {
+        if (CredentialStore.has(this)) {
             String[] cred = CredentialStore.read(this);
-            subAuto.setText(cred != null
-                    ? "已记住 " + CredentialStore.mask(cred[0]) + " · 密码加密存放本机"
-                    : "已开启 · 下次手动登录时自动记住密码");
+            String who = cred != null ? CredentialStore.mask(cred[0]) : "已保存";
+            subAuto.setText((CredentialStore.isEnabled(this) ? "已开启 · " : "已关闭 · ")
+                    + "账号 " + who + " · 点此行可更新或清除");
+        } else if (CredentialStore.isEnabled(this)) {
+            subAuto.setText("已开启 · 还没保存账密，点此行输入");
         } else {
-            subAuto.setText("未开启 · 开启后登录一次即可自动登录");
+            subAuto.setText("未开启 · 开启后输入一次即可自动登录");
         }
 
         // 缓存统计
@@ -1983,9 +2007,9 @@ public class MainActivity extends Activity {
         String msg = "1. 首次使用\n"
                 + "   更多 → 教务处登录 → 登录统一身份认证（学校账号，App 不保存密码）。\n\n"
                 + "2. 自动登录（可选）\n"
-                + "   更多 → 「记住密码并自动登录」打开开关，之后手动登录一次即可；"
-                + "会话过期时会自动填入账密登录（遇到验证码仍需手动输入）。"
-                + "密码经手机安全芯片加密后只存在本机。\n\n"
+                + "   更多 → 「记住密码并自动登录」打开开关，在弹窗里输入一次学号与密码即可；"
+                + "会话过期时会自动填入并登录（遇到验证码仍需手动输入）。"
+                + "密码经手机安全芯片加密后只存在本机，不上传；点该行可随时更新或清除。\n\n"
                 + "3. 导入课表\n"
                 + "   登录后切到「课表」，点右上角 ⤓ 导入课表，选学期即可；"
                 + "首次需选开学日期以便推算周次。\n\n"
@@ -2510,6 +2534,54 @@ public class MainActivity extends Activity {
     /* ---------- 记住密码自动登录 ---------- */
 
     /**
+     * 让用户在本机输入一次账号密码（v3.8.2 的新方案主路径）。
+     *
+     * 之前靠注入 JS 从登录页抓取，但登录页经 WebVPN 改写、DOM 随时重建，
+     * 钩子注入时机/表单重建/桥接任一环节出问题都会静默失败；
+     * 由用户在 App 内明确输入一次，链路最短，也最符合「我自己的账号我自己交给本机保管」。
+     */
+    private void askCredentials(String title) {
+        View form = LayoutInflater.from(this).inflate(R.layout.dialog_credential, null);
+        final EditText userEt = form.findViewById(R.id.credUser);
+        final EditText passEt = form.findViewById(R.id.credPass);
+        String[] saved = CredentialStore.read(this);
+        if (saved != null) {
+            userEt.setText(saved[0]);
+            passEt.setText(saved[1]);
+        }
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(form)
+                .setPositiveButton("保存并开启", (d, w) -> {
+                    String u = userEt.getText().toString().trim();
+                    String p = passEt.getText().toString();
+                    if (u.isEmpty() || p.isEmpty()) {
+                        Toast.makeText(this, "账号和密码都要填写", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (CredentialStore.save(this, u, p)) {
+                        CredentialStore.setEnabled(this, true);
+                        Toast.makeText(this, "已保存 · 下次会话过期时会自动登录",
+                                Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "此设备不支持安全存储，未保存密码",
+                                Toast.LENGTH_LONG).show();
+                    }
+                    refreshMorePage();
+                })
+                .setNegativeButton("取消", null);
+        if (CredentialStore.has(this)) {
+            b.setNeutralButton("清除已保存", (d, w) -> {
+                CredentialStore.clear(this);
+                Toast.makeText(this, "已清除保存的账号密码", Toast.LENGTH_SHORT).show();
+                refreshMorePage();
+            });
+        }
+        b.show();
+    }
+
+    /**
      * 统一身份认证登录页加载完成后的分流：
      *  · 有保存的账密且没被验证码/失败拦住 → 自动填表并点「登录」；
      *  · 没有账密（或自动登录放弃）→ 挂抓取钩子，这次手动登录会被记住。
@@ -2531,12 +2603,13 @@ public class MainActivity extends Activity {
         // 走不到自动登录（没保存过 / 试完了 / 要验证码）：
         // 挂抓取钩子，用户手动登录这一次会被记住，下次就能自动
         view.evaluateJavascript(CRED_HOOK_JS, null);
-        // 引导提示：开关是开的、密码还没存，用户不知道这次登录会被记住。
-        // 每次会话只提一次 —— 登录页可能连加载几个 URL，不设防会连环弹 Toast
+        // 引导提示：开关开着但还没存过账密时，告诉用户去哪里输入
+        // （v3.8.2 起账密由用户在 App 内输入，不再依赖从登录页抓）
         if (!autoLoginHintShown) {
             autoLoginHintShown = true;
             Toast.makeText(this,
-                    "已开启自动登录 · 这次登录后密码会被记住", Toast.LENGTH_LONG).show();
+                    "自动登录还没建立：到「更多 → 记住密码并自动登录」输入一次账号密码",
+                    Toast.LENGTH_LONG).show();
         }
     }
 
@@ -2567,13 +2640,19 @@ public class MainActivity extends Activity {
                 + "return 'filled';"
                 + "}"
                 + "var r=attempt();"
-                + "if(r)return report(r);"
+                + "if(r){report(r);blur();return;}"
                 + "var n=0;"
                 + "var timer=setInterval(function(){"
                 + "if(++n>18){clearInterval(timer);report('noform');return;}"
                 + "var r2=attempt();"
-                + "if(r2){clearInterval(timer);report(r2);}"
+                + "if(r2){clearInterval(timer);report(r2);blur();}"
                 + "},400);"
+                // 提交后 6 秒还停在登录页 = 表单提交没生效（或被风控拦下），
+                // 明确报出来，用户就不用对着登录页猜「到底自不自动」。
+                // 6 秒是给 WebVPN 的多跳重定向留的余量，太短会误报。
+                + "function blur(){setTimeout(function(){"
+                + "if(document.querySelector('#casLoginForm')&&document.querySelector('#password'))report('stuck');"
+                + "},6000);}"
                 + "})()";
     }
 
