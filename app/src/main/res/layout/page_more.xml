@@ -67,31 +67,16 @@
 
                 <TextView style="@style/MoreArrow" />
             </LinearLayout>
-        </LinearLayout>
 
-        <!-- ══════════ 课表 ══════════
-             「导入课表」原在这一页，用户要求删掉：导入课表是课表页自己的事，
-             入口已经移到课表页顶栏的 ⤓ 按钮上，这里再放一个只是重复。
-             这一页只留「添加课表」—— 多张课表的管理入口。 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_marginBottom="6dp"
-            android:text="课表"
-            android:textSize="12sp"
-            android:textColor="#8b92a3"
-            android:textStyle="bold" />
+            <View style="@style/MoreDivider" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_bg"
-            android:layout_marginBottom="10dp">
-
+            <!--
+              记住密码并自动登录：默认关闭，用户主动打开才生效。
+              把开关放在「教务处登录」正下方 —— 两件事本来就是一个流程：
+              第一次手动登录时顺便记住，之后的会话过期就不用再输了。
+            -->
             <LinearLayout
-                android:id="@+id/rowAddSchedule"
+                android:id="@+id/rowAutoLogin"
                 style="@style/MoreRow">
 
                 <LinearLayout
@@ -102,15 +87,20 @@
 
                     <TextView
                         style="@style/MoreRowTitle"
-                        android:text="添加课表" />
+                        android:text="记住密码并自动登录" />
 
                     <TextView
-                        android:id="@+id/subAddSchedule"
+                        android:id="@+id/subAutoLogin"
                         style="@style/MoreRowSub"
-                        android:text="新建一张空白课表，可分别导入、随时切换" />
+                        android:text="未开启 · 开启后登录一次即可自动登录" />
                 </LinearLayout>
 
-                <TextView style="@style/MoreArrow" />
+                <Switch
+                    android:id="@+id/swAutoLogin"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="@color/sw_thumb"
+                    android:trackTint="@color/sw_track" />
             </LinearLayout>
         </LinearLayout>
 

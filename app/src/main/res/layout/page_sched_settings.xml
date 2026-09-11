@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  课表设置 · 原生整页（课表设置面板 → 课表设置）
+
+  样式对齐参考截图：大卡片分组 + 「标签 …… 值」行式布局。
+  放的内容都是针对「当前课表」的：
+    · 名称 / 数据（开学日期、当前周、节数、周数）/ 外观（周末显隐）/ 危险操作
+  开学日期从课表周次条挪到这里 —— 「点周次条中间改日期」藏得太深，用户反馈过。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/schedSettingsScroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#f5f6f8"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="22dp">
+
+        <!-- 顶栏：返回 + 标题 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/ssBack"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/btn_icon_flat"
+                android:src="@drawable/ic_skeu_back"
+                android:tint="#1B4D8F"
+                android:scaleType="centerInside"
+                android:contentDescription="返回课表" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="课表设置"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textColor="#1B1F27" />
+        </LinearLayout>
+
+        <!-- 课表名称 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp">
+
+            <LinearLayout
+                android:id="@+id/ssRowName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    style="@style/MoreRowTitle"
+                    android:text="课表名称"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/ssName"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="14dp"
+                    android:gravity="end"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="—"
+                    android:textSize="14sp"
+                    android:textColor="#6c7686" />
+
+                <TextView style="@style/MoreArrow" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 课表数据 -->
+        <TextView
+            style="@style/MoreSectionLabel"
+            android:text="课表数据" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg">
+
+            <LinearLayout
+                android:id="@+id/ssRowTimes"
+                style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="上课时间" />
+
+                <TextView
+                    android:id="@+id/ssTimes"
+                    style="@style/SsRowValue"
+                    android:text="点击查看" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout
+                android:id="@+id/ssRowTermStart"
+                style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="第一周的第一天" />
+
+                <TextView
+                    android:id="@+id/ssTermStart"
+                    style="@style/SsRowValue"
+                    android:text="—" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="当前周" />
+
+                <TextView
+                    android:id="@+id/ssCurrentWeek"
+                    style="@style/SsRowValue"
+                    android:text="第 1 周" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="一天课程节数" />
+
+                <TextView
+                    android:id="@+id/ssPeriods"
+                    style="@style/SsRowValue"
+                    android:text="12 节" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="学期周数" />
+
+                <TextView
+                    android:id="@+id/ssMaxWeek"
+                    style="@style/SsRowValue"
+                    android:text="20 周" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout
+                android:id="@+id/ssRowCourses"
+                style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="管理已添加课程" />
+
+                <TextView style="@style/MoreArrow" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 课表外观 -->
+        <TextView
+            style="@style/MoreSectionLabel"
+            android:text="课表外观" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg">
+
+            <LinearLayout style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="显示周六" />
+
+                <Switch
+                    android:id="@+id/ssShowSat"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="@color/sw_thumb"
+                    android:trackTint="@color/sw_track" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="显示周日" />
+
+                <Switch
+                    android:id="@+id/ssShowSun"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="@color/sw_thumb"
+                    android:trackTint="@color/sw_track" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 数据 -->
+        <TextView
+            style="@style/MoreSectionLabel"
+            android:text="数据" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg">
+
+            <LinearLayout
+                android:id="@+id/ssRowReimport"
+                style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="重新导入本课表" />
+
+                <TextView style="@style/MoreArrow" />
+            </LinearLayout>
+
+            <View style="@style/MoreDivider" />
+
+            <LinearLayout
+                android:id="@+id/ssRowDelete"
+                style="@style/SsRow">
+
+                <TextView
+                    style="@style/SsRowTitle"
+                    android:text="删除本课表"
+                    android:textColor="#C0392B" />
+
+                <TextView style="@style/MoreArrow" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:text="以上设置只影响本机显示，教务系统不受影响"
+            android:textSize="11sp"
+            android:textColor="#A8AFBD" />
+    </LinearLayout>
+</ScrollView>

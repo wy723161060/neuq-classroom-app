@@ -27,50 +27,33 @@
         android:layout_marginTop="10dp"
         android:background="@drawable/sheet_handle" />
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:scrollbars="none">
+            <!--
+              不放「课表设置」标题（用户要求）：把手本身就是「这是个抽屉」的信号，
+              面板内容（周数/课表/宫格）也自解释，标题行属于占空间不提供信息。
+              关闭走「点抽屉外部」或返回键，不单独放 ✕。
+            -->
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:scrollbars="none">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <!-- 标题行 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="课表设置"
-                    android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:textColor="#1B1F27" />
-
-                <ImageButton
-                    android:id="@+id/schedClose"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
-                    android:layout_marginEnd="-6dp"
-                    android:background="@drawable/btn_icon_flat"
-                    android:src="@drawable/ic_skeu_close"
-                    android:tint="#8B92A3"
-                    android:scaleType="centerInside"
-                    android:contentDescription="关闭" />
-            </LinearLayout>
+            <!--
+              不放「课表设置」标题（用户要求）：把手本身就是「这是个抽屉」的信号，
+              面板内容（周数/课表/宫格）也自解释，标题行属于占空间不提供信息。
+              关闭走「点抽屉外部」或返回键，不单独放 ✕。
+            -->
 
             <!-- ══════════ 周数 ══════════ -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:orientation="vertical"
                 android:background="@drawable/cache_card_bg"
                 android:padding="14dp">
@@ -190,6 +173,50 @@
                 android:orientation="vertical" />
 
             <!--
+              四宫格入口（仿照参考截图的样式）：课表相关的次级功能收在这里，
+              面板本体只留最高频的「调周次 / 切课表 / 调课 / 添加」。
+                上课时间   —— 查看每节课的起止时间
+                课表设置   —— 整页设置：开学日期 / 外观 / 重命名 / 删除
+                已添加课程 —— 课程卡片墙，可改可删
+                常见问题   —— 使用说明
+            -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/gridTime"
+                    style="@style/SchedGridCell"
+                    android:text="上课时间" />
+
+                <TextView
+                    android:id="@+id/gridSettings"
+                    style="@style/SchedGridCell"
+                    android:layout_marginStart="10dp"
+                    android:text="课表设置" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/gridCourses"
+                    style="@style/SchedGridCell"
+                    android:text="已添加课程" />
+
+                <TextView
+                    android:id="@+id/gridFaq"
+                    style="@style/SchedGridCell"
+                    android:layout_marginStart="10dp"
+                    android:text="常见问题" />
+            </LinearLayout>
+
+            <!--
               两个动作并排：
                 调课     —— 老师临时挪课 / 换教室 / 本周停课，做本地调整（描边款）
                 添加课表 —— 新建一张空白课表（实心蓝，本面板唯一的主行动）
@@ -197,7 +224,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="12dp"
                 android:orientation="horizontal">
 
                 <TextView

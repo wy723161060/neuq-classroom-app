@@ -110,4 +110,69 @@
         <item name="android:layout_marginStart">14dp</item>
         <item name="android:background">#F2F3F6</item>
     </style>
+
+    <!-- 课表设置页的分组小标题 -->
+    <style name="MoreSectionLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">#8b92a3</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!--
+      课表设置页的「标签 …… 值」行：左边是设置项名，右边是当前值或箭头。
+      抽成 style 与「更多」页同理 —— 行数多，散写容易行高不齐。
+    -->
+    <style name="SsRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:background">?android:attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="SsRowTitle">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#222222</item>
+    </style>
+
+    <style name="SsRowValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">#6c7686</item>
+    </style>
+
+    <!--
+      课表设置面板里的四宫格单元（上课时间 / 课表设置 / 已添加课程 / 常见问题）。
+      淡蓝底 + 圆角，视觉上比卡片轻一档：它们是「入口」，不是「内容」。
+    -->
+    <style name="SchedGridCell">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">16dp</item>
+        <item name="android:background">@drawable/grid_cell_bg</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:textSize">13.5sp</item>
+        <item name="android:textColor">#33405C</item>
+    </style>
 </resources>

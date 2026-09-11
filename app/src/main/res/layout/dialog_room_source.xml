@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  空教室「数据来源」对话框的内容区。
+
+  上半部分是 AlertDialog.setItems 的两条选项（登录教务处 / 通道2网站），
+  这里放的是一个勾选项：勾上之后，每次打开软件都会自动从通道2读取最新数据，
+  不用再手动刷新 —— 通道2是免登录的，静默后台跑没有任何负担。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp">
+
+    <CheckBox
+        android:id="@+id/chkAutoImport"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:text="每次打开软件时自动从通道2导入"
+        android:textSize="13.5sp"
+        android:textColor="#222222" />
+</LinearLayout>

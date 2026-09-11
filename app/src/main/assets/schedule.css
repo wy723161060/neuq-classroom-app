@@ -25,12 +25,9 @@ h1 { font-size: 18px; margin: 4px 0 2px; }
 }
 .weekbar .cur {
   flex: 1; text-align: center; font-size: 14px; font-weight: 700; color: #1B4D8F;
-  padding: 3px 4px; border-radius: 8px; cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  padding: 8px 4px; border-radius: 8px;
+  /* 不再响应点击：开学日期的设置挪进了「课表设置」页（点中间改日期藏得太深） */
 }
-.weekbar .cur:active { background: #eef3fb; }
-.weekbar .cur small { display: block; font-weight: 400; font-size: 11px; color: #999; }
-.weekbar .cur:active small { color: #1B4D8F; }
 .weekbar button {
   border: 1px solid #dfe3ea; background: #fff; color: #44506b;
   border-radius: 8px; padding: 6px 11px; font-size: 12.5px; cursor: pointer;

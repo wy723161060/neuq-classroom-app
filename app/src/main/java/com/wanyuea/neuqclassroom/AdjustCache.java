@@ -43,9 +43,10 @@ final class AdjustCache {
     static final String FILE_NAME = "adjust.json";
     private static final int MAX_BYTES = 4 * 1024 * 1024;
 
-    /** 作用范围：只这一次（某一周） / 之后每周 */
+    /** 作用范围：只这一次（某一周） / 之后每周 / 整天调休（节假日调课用） */
     static final String SCOPE_WEEK = "week";
     static final String SCOPE_ALL = "all";
+    static final String SCOPE_DAY = "day";
 
     private AdjustCache() {}
 
@@ -63,6 +64,13 @@ final class AdjustCache {
         int startSection = 0;
         int endSection = 0;
         String room = "";
+
+        /**
+         * 整天调课（scope=day）专用：目标周次。
+         * 节假日调休经常跨周 —— 「第 5 周周四的课调到第 6 周周六」，
+         * 所以整天调课必须同时记录源周和目标周。
+         */
+        int targetWeek = -1;
 
         /** 原位置，用于「影子」提示与清单展示 */
         int srcDay = 0;
@@ -139,6 +147,7 @@ final class AdjustCache {
         a.startSection = o.optInt("sb", 0);
         a.endSection = o.optInt("se", 0);
         a.room = o.optString("room", "");
+        a.targetWeek = o.optInt("tw", -1);
         a.srcDay = o.optInt("sd", 0);
         a.srcStart = o.optInt("ssb", 0);
         a.srcEnd = o.optInt("sse", 0);
@@ -159,6 +168,7 @@ final class AdjustCache {
         o.put("sb", a.startSection);
         o.put("se", a.endSection);
         o.put("room", a.room);
+        o.put("tw", a.targetWeek);
         o.put("sd", a.srcDay);
         o.put("ssb", a.srcStart);
         o.put("sse", a.srcEnd);
@@ -189,17 +199,55 @@ final class AdjustCache {
      *
      * 同一门课既有「每周」又有「本周」记录时，本周的优先 ——
      * 用户先设了每周调课，又单独改了这一周，预期显然是后者生效。
+     * 整天调课（scope=day）不参与：它作用于「一整天」，由渲染端单独取。
      */
     static List<Adjust> forWeek(Context ctx, String schedId, int week) {
         List<Adjust> all = list(ctx, schedId);
         Map<String, Adjust> eff = new LinkedHashMap<>();
         for (Adjust a : all) {
+            if (SCOPE_DAY.equals(a.scope)) continue;
             if (a.appliesTo(week) && SCOPE_ALL.equals(a.scope)) eff.put(a.courseKey, a);
         }
         for (Adjust a : all) {
+            if (SCOPE_DAY.equals(a.scope)) continue;
             if (a.appliesTo(week) && !SCOPE_ALL.equals(a.scope)) eff.put(a.courseKey, a);
         }
         return new ArrayList<>(eff.values());
+    }
+
+    /** 整天调课（节假日调休）记录 */
+    static List<Adjust> dayMoves(Context ctx, String schedId) {
+        List<Adjust> out = new ArrayList<>();
+        for (Adjust a : list(ctx, schedId)) {
+            if (SCOPE_DAY.equals(a.scope)) out.add(a);
+        }
+        return out;
+    }
+
+    /**
+     * 同一个源日的整天调课只保留一条：先设「周四 → 周六」又改成「周四 → 周日」时，
+     * 新记录应当替换旧记录，而不是两条叠加（叠加会让渲染端不知道听谁的）。
+     */
+    static void removeDayMove(Context ctx, String schedId, int srcWeek, int srcDay) {
+        JSONObject store = store(ctx);
+        JSONArray items = store.optJSONArray("items");
+        if (items == null) return;
+        JSONArray next = new JSONArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject o = items.optJSONObject(i);
+            if (o == null) continue;
+            boolean hit = schedId.equals(o.optString("sched", ""))
+                    && SCOPE_DAY.equals(o.optString("scope", ""))
+                    && srcWeek == o.optInt("week", -1)
+                    && srcDay == o.optInt("sd", -1);
+            if (hit) continue;
+            next.put(o);
+        }
+        try {
+            store.put("items", next);
+        } catch (Exception ignored) {
+        }
+        persist(ctx, store);
     }
 
     /** 这门课有没有任何调课记录（用来决定「撤销调课」按钮要不要亮） */
@@ -310,6 +358,51 @@ final class AdjustCache {
             if (o == null) continue;
             if (schedId.equals(o.optString("sched", ""))
                     && courseKey.equals(o.optString("key", ""))) continue;
+            next.put(o);
+        }
+        try {
+            store.put("items", next);
+        } catch (Exception ignored) {
+        }
+        persist(ctx, store);
+    }
+
+    /**
+     * 课程改名后同步修正调课记录：courseKey 以课名开头（课名|星期|起节|止节），
+     * 改名后不修正的话，这门课已有的调课记录会全部失配变成孤儿。
+     */
+    static void rekeyRename(Context ctx, String schedId, String oldName, String newName) {
+        JSONObject store = store(ctx);
+        JSONArray items = store.optJSONArray("items");
+        if (items == null || oldName == null || oldName.isEmpty()) return;
+        boolean changed = false;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject o = items.optJSONObject(i);
+            if (o == null || !schedId.equals(o.optString("sched", ""))) continue;
+            String key = o.optString("key", "");
+            if (key.startsWith(oldName + "|")) {
+                try {
+                    o.put("key", newName + key.substring(oldName.length()));
+                    o.put("name", newName);
+                    changed = true;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (changed) persist(ctx, store);
+    }
+
+    /** 按课名删除全部调课记录（课程管理里删除一门课 / 清空课程时用） */
+    static void removeByName(Context ctx, String schedId, String name) {
+        JSONObject store = store(ctx);
+        JSONArray items = store.optJSONArray("items");
+        if (items == null || name == null || name.isEmpty()) return;
+        JSONArray next = new JSONArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject o = items.optJSONObject(i);
+            if (o == null) continue;
+            if (schedId.equals(o.optString("sched", ""))
+                    && o.optString("key", "").startsWith(name + "|")) continue;
             next.put(o);
         }
         try {

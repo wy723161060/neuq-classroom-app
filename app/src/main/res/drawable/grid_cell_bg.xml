@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 四宫格单元的底：淡蓝圆角卡片，比白卡片弱一档（是入口不是内容） -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#241B4D8F">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#EDF2FA" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</ripple>

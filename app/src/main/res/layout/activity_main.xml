@@ -124,6 +124,25 @@
             android:visibility="gone" />
 
         <!--
+          课表设置 / 课程管理：原生整页，从课表设置面板的四宫格进入。
+          和「更多」一样属于「内容互斥视图」，收进 showContentView 的互斥列表，
+          返回键先关它们再退 Tab。
+        -->
+        <include
+            android:id="@+id/schedSettingsPage"
+            layout="@layout/page_sched_settings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/courseManagerPage"
+            layout="@layout/page_courses"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!--
           内嵌浏览器页：用来打开空闲教室总表网页。
           单独一个 WebView，不和教务那两个共用 —— 总表与教务是两套站点，
           共用一个 WebView 会让「上一次浏览的页面」在两个用途间串味，

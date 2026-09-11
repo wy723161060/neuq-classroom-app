@@ -131,6 +131,11 @@
     return true;
   }
 
+  /* 导出清洗/过滤函数：通道 2 网站导入（nqImportWeb）要复用同一套规则，
+     保证「从教务抓」和「从网站读」得到的数据口径完全一致 */
+  window.nqCleanName = cleanName;
+  window.nqShouldKeep = shouldKeep;
+
   /* 单次查询：POST free!search.action，解析 table.gridtable */
   async function query(BASE, date, tb, te) {
     var body = new URLSearchParams();

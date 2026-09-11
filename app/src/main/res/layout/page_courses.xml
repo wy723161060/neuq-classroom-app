@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  课程管理 · 原生整页（课表设置面板 → 已添加课程）
+
+  样式对齐参考截图：2 列课程卡片墙 + 顶部「清空」+ 右下角「+」。
+    · 轻触卡片 → 编辑这门课（改名 / 教师 / 教室，作用于全部节次）
+    · 长按卡片 → 删除这门课的全部节次
+    · 右下角 + → 手动添加一节课（如考试、补课）
+  卡片底色沿用课表八色循环的低饱和淡色版，和周视图里的课程色一一对应。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#f5f6f8">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="90dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageButton
+                    android:id="@+id/cmBack"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:background="@drawable/btn_icon_flat"
+                    android:src="@drawable/ic_skeu_back"
+                    android:tint="#1B4D8F"
+                    android:scaleType="centerInside"
+                    android:contentDescription="返回" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:text="课程管理"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="#1B1F27" />
+
+                <TextView
+                    android:id="@+id/cmClear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:text="清空"
+                    android:textSize="14sp"
+                    android:textColor="#C0392B" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:text="轻触编辑，长按删除"
+                android:textSize="12sp"
+                android:textColor="#9AA2B4" />
+
+            <TextView
+                android:id="@+id/cmEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:text="这张课表还没有课程\n点右下角 + 手动添加，或回课表页导入"
+                android:textSize="13sp"
+                android:textColor="#9AA2B4"
+                android:visibility="gone" />
+
+            <!-- 卡片墙：每行两张，代码动态插入 -->
+            <LinearLayout
+                android:id="@+id/cmGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- 手动添加一节课 -->
+    <TextView
+        android:id="@+id/cmAdd"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="18dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/cm_fab_bg"
+        android:gravity="center"
+        android:text="+"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:textColor="#1B4D8F"
+        android:elevation="4dp" />
+</FrameLayout>

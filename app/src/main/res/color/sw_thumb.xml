@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自动登录开关的圆钮：开着是校徽蓝，关着是浅灰 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="#1B4D8F" />
+    <item android:color="#BFC6D4" />
+</selector>
