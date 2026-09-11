@@ -168,10 +168,14 @@ public class MainActivity extends Activity {
     private boolean loginHintShown = false;
 
     /* ---------- 记住密码自动登录 ---------- */
-    /** 已尝试的自动登录次数：密码错了 CAS 会重新渲染登录页，最多试 2 次就交还用户，防止死循环 */
+    /** 已尝试的自动登录次数：密码错了 CAS 会重新渲染登录页，试 3 次就交还用户，防止死循环 */
     private int autoLoginTries = 0;
     /** 登录页弹了验证码：自动登录帮不上忙，交还用户；登录成功后复位 */
     private boolean captchaHold = false;
+    /** 本会话是否出现过统一身份认证登录页（用于判断「该提醒补录密码」的时机） */
+    private boolean loginPageSeen = false;
+    /** 「自动登录未生效」补救提示是否已经给过（每次会话最多一次，不连环打扰） */
+    private boolean autoLoginMissHintShown = false;
     /**
      * 自动登录引导提示是否已经弹过（每次会话一次就够）。
      * 开关打开但还没存过密码时，用户不知道「这次登录会被记住」——
@@ -341,6 +345,18 @@ public class MainActivity extends Activity {
                 if (url != null && url.contains("/eams/")) {
                     autoLoginTries = 0;
                     captchaHold = false;
+                    // 开了自动登录但登录成功后仍没存下密码 = 抓取没成功。
+                    // 这时候「没生效」的原因用户自己是看不出来的，必须明说怎么补救。
+                    // 只在本会话真的出现过登录页时才提示（开了开关但还没登录过时不打扰）。
+                    if (loginPageSeen && CredentialStore.isEnabled(MainActivity.this)
+                            && !CredentialStore.has(MainActivity.this) && !autoLoginMissHintShown) {
+                        autoLoginMissHintShown = true;
+                        statusText.setText("自动登录未生效 · 请退出后重新登录一次");
+                        Toast.makeText(MainActivity.this,
+                                "自动登录未生效：这次登录没有被记录。请退出登录后重新登录一次，"
+                                        + "密码就会被记住",
+                                Toast.LENGTH_LONG).show();
+                    }
                 }
                 // 统一身份认证登录页：开了「记住密码」就走自动登录 / 挂抓取钩子。
                 // 注意要放在 pending 早退之前 —— 启动时的后台加载（无 pending）也会
@@ -764,14 +780,24 @@ public class MainActivity extends Activity {
             });
         }
 
-        /** 自动登录撞上验证码：机器填不了，交还用户手动完成这一次 */
+        /**
+         * 自动登录每一步的结果回传（filled=已填并提交 / captcha=要验证码 / noform=没找到登录框）。
+         * 之前填不上就静默 return，用户只看到「没生效」却不知道原因 —— 现在每一步可见。
+         */
         @JavascriptInterface
-        public void onAutoLoginCaptcha() {
+        public void onAutoLoginResult(final String code) {
             mainHandler.post(() -> {
-                captchaHold = true;
-                statusText.setText("登录需要验证码，请手动完成");
-                Toast.makeText(MainActivity.this,
-                        "本次登录需要验证码，请手动输入完成登录", Toast.LENGTH_LONG).show();
+                if ("filled".equals(code)) {
+                    statusText.setText("正在自动登录…");
+                } else if ("captcha".equals(code)) {
+                    captchaHold = true;
+                    statusText.setText("登录需要验证码，请手动完成");
+                    Toast.makeText(MainActivity.this,
+                            "本次登录需要验证码，请手动输入完成登录", Toast.LENGTH_LONG).show();
+                } else if ("noform".equals(code)) {
+                    statusText.setText("自动登录未找到登录框 · 请手动登录");
+                }
+                // 其他值（等待中）不打扰用户
             });
         }
 
@@ -2473,17 +2499,17 @@ public class MainActivity extends Activity {
      *  · 有保存的账密且没被验证码/失败拦住 → 自动填表并点「登录」；
      *  · 没有账密（或自动登录放弃）→ 挂抓取钩子，这次手动登录会被记住。
      *
-     * 自动登录最多试 2 次：密码改了的话 CAS 会原样重渲染登录页，
+     * 自动登录最多试 3 次：密码改了的话 CAS 会原样重渲染登录页，
      * 不设上限就是无限刷新循环 —— 交还用户手动登录才是正确兜底。
      */
     private void handleLoginPage(WebView view, String url) {
         boolean enabled = CredentialStore.isEnabled(this);
         if (!enabled) return;
+        loginPageSeen = true;
 
         String[] cred = CredentialStore.read(this);
-        if (cred != null && autoLoginTries < 2 && !captchaHold) {
+        if (cred != null && autoLoginTries < 3 && !captchaHold) {
             autoLoginTries++;
-            statusText.setText("正在自动登录…");
             view.evaluateJavascript(buildAutoLoginJs(cred[0], cred[1]), null);
             return;
         }
@@ -2499,18 +2525,40 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 自动登录脚本：填入账密后点同一个登录按钮，加密仍由页面自己的 JS 完成 */
+    /**
+     * 自动登录脚本：填入账密后点同一个登录按钮，加密仍由页面自己的 JS 完成。
+     *
+     * v3.7.3 修的坑：CAS 页面有约 1 秒淡入 + WebVPN 脚本初始化，
+     * onPageFinished 时立刻填表可能撞上表单不可交互（或 VPN 脚本自刷新页面），
+     * 而且填不上就静默 return —— 表现就是「自动登录没生效」但谁也不知道为什么。
+     * 现在改成轮询等表单就绪（最多约 7 秒）再填，并把每一步结果回传给 App：
+     * filled=已填并提交 / captcha=需要验证码 / noform=始终没找到登录框。
+     */
     private String buildAutoLoginJs(String user, String pass) {
-        return "(function(){if(window.__nqAuto)return;window.__nqAuto=1;"
+        return "(function(){"
+                + "if(window.__nqAuto)return;"
+                + "window.__nqAuto=1;"
+                + "function report(code){try{Android.onAutoLoginResult(code);}catch(e){}}"
+                + "function attempt(){"
                 + "var f=document.querySelector('#casLoginForm'),"
                 + "u=document.querySelector('#username'),p=document.querySelector('#password');"
-                + "if(!f||!u||!p)return;"
+                + "if(!f||!u||!p)return null;"
                 + "var cap=document.querySelector('#cpatchaDiv');"
-                + "if(cap&&(cap.offsetWidth>0||cap.offsetHeight>0)){Android.onAutoLoginCaptcha();return;}"
+                + "if(cap&&(cap.offsetWidth>0||cap.offsetHeight>0))return 'captcha';"
                 + "u.value=" + JSONObject.quote(user) + ";"
                 + "p.value=" + JSONObject.quote(pass) + ";"
                 + "var b=f.querySelector('.submitBtn');"
                 + "if(b){b.click();}else{f.submit();}"
+                + "return 'filled';"
+                + "}"
+                + "var r=attempt();"
+                + "if(r)return report(r);"
+                + "var n=0;"
+                + "var timer=setInterval(function(){"
+                + "if(++n>18){clearInterval(timer);report('noform');return;}"
+                + "var r2=attempt();"
+                + "if(r2){clearInterval(timer);report(r2);}"
+                + "},400);"
                 + "})()";
     }
 
