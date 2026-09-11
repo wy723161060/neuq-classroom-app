@@ -97,10 +97,11 @@ td.cell.today .free-slot .plus { color: #a8c2e4; }
 
 /* 课程卡片 */
 .course {
-  border-radius: 7px; padding: 4px 3px; height: 100%;
+  border-radius: 8px; padding: 4px 3px; height: 100%;
   display: flex; flex-direction: column; justify-content: center; gap: 1px;
   color: #fff; text-align: center; overflow: hidden; cursor: pointer;
   position: relative;          /* 「调」角标的定位基准 */
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);   /* WakeUp 同款轻投影，色块更立体 */
   animation: rise .3s cubic-bezier(.21,.61,.35,1) both;
 }
 .course:active { opacity: .82; }
@@ -115,15 +116,15 @@ td.cell.today .free-slot .plus { color: #a8c2e4; }
   to   { opacity: 1; transform: none; }
 }
 
-/* 八色循环：低饱和、白字可读 */
-.c0 { background: #1B4D8F; }
-.c1 { background: #0F6E56; }
-.c2 { background: #A2451B; }
-.c3 { background: #5B3E8C; }
-.c4 { background: #8A5A12; }
-.c5 { background: #0E5A6E; }
-.c6 { background: #7A2E4E; }
-.c7 { background: #3D5A2E; }
+/* 八色循环：WakeUp 课程表同款明快配色（白字可读，蓝/粉/青为主） */
+.c0 { background: #2979ff; }
+.c1 { background: #1DE9B6; }
+.c2 { background: #fa6278; }
+.c3 { background: #005caf; }
+.c4 { background: #FFB300; }
+.c5 { background: #2196f3; }
+.c6 { background: #ff9100; }
+.c7 { background: #FF1744; }
 
 /* ── 调课（本地调整） ──────────────────────────────────────────────
    调过的课要能一眼看出来，所以做了「两处标记」：

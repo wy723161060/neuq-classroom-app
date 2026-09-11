@@ -154,8 +154,8 @@
         </LinearLayout>
 
         <!-- ══════════ 空教室表网页 ══════════
-             多个通道指向同一份空闲教室总表：万一某个站点被墙、被限流或临时下线，
-             用户还能走另一条。每行左侧标出「通道N」，行内直接显示完整链接， -->
+             网页版总表入口（每小时自动更新）。v3.8.0 起只保留通道 2：
+             通道 1 的站点已停更，双通道的容灾价值不再成立。 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -187,36 +187,7 @@
 
             <View style="@style/MoreDivider" />
 
-            <!-- 通道 1：自建站点，国内访问通常最稳 -->
-            <LinearLayout
-                android:id="@+id/rowChannel1"
-                style="@style/MoreRow">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        style="@style/MoreRowTitle"
-                        android:text="空闲教室总表（Pages）" />
-
-                    <TextView
-                        style="@style/MoreRowLink"
-                        android:text="neuq-classroom-query-2kb.pages.dev" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/MoreChannel"
-                    android:text="通道1" />
-
-                <TextView style="@style/MoreArrow" />
-            </LinearLayout>
-
-            <View style="@style/MoreDivider" />
-
-            <!-- 通道 2：上游仓库的网页版入口 -->
+            <!-- 通道 2：上游仓库的网页版入口（v3.8.0 起通道 1 下线，只留此入口） -->
             <LinearLayout
                 android:id="@+id/rowChannel2"
                 style="@style/MoreRow">

@@ -254,18 +254,32 @@ public class MainActivity extends Activity {
             + "})()";
 
     /**
-     * 抓取钩子：挂在登录表单的捕获阶段，用户点「登录」的一瞬间把输入框原文发给 App。
-     * 只在开关打开时注入；页面自身的加密逻辑（encrypt.wisedu.js）在提交阶段才跑，
-     * 捕获阶段读到的是用户输入的原文，随后页面照常加密提交，互不干扰。
+     * 抓取钩子：以事件委托挂在 document 的捕获阶段，用户点「登录」/表单提交的瞬间
+     * 把输入框原文发给 App。只在开关打开时注入；页面自身的加密逻辑
+     * （encrypt.wisedu.js）在提交阶段才跑，捕获阶段读到的是用户输入的原文，
+     * 随后页面照常加密提交，互不干扰。
+     *
+     * v3.7.4 修的坑：旧版把监听器挂在 #casLoginForm / .submitBtn 节点上，
+     * 但 CAS 页面有 1 秒淡入 + VPN 脚本可能重建/自刷新 DOM —— 节点一换，
+     * 监听器随旧节点一起消失，用户点登录时钩子已经不在了（静默失败，
+     * 表现为「自动登录未生效」）。事件委托挂在 document 上与具体节点无关，
+     * 表单怎么重建都逮得到。
      */
     private static final String CRED_HOOK_JS =
             "(function(){if(window.__nqHook)return;window.__nqHook=1;"
-            + "var f=document.querySelector('#casLoginForm');if(!f)return;"
-            + "var send=function(){try{var u=document.querySelector('#username'),"
-            + "p=document.querySelector('#password');"
-            + "if(u&&p&&u.value&&p.value)Android.onCapturedCredentials(u.value,p.value);}catch(e){}};"
-            + "f.addEventListener('submit',send,true);"
-            + "var b=f.querySelector('.submitBtn');if(b)b.addEventListener('click',send,true);})()";
+            + "var last=0;"
+            + "var send=function(){"
+            + "try{if(Date.now()-last<2500)return;last=Date.now();"
+            + "var u=document.querySelector('#username'),p=document.querySelector('#password');"
+            + "if(u&&p&&u.value&&p.value)Android.onCapturedCredentials(u.value,p.value);"
+            + "}catch(e){}};"
+            + "document.addEventListener('submit',send,true);"
+            // 点击委托：只认「提交类按钮」，避免点「忘记密码」等链接时把半截密码记下来
+            + "document.addEventListener('click',function(e){"
+            + "var t=e.target;"
+            + "if(t&&t.closest&&t.closest('.submitBtn,button[type=submit],input[type=submit],#login-button'))send();"
+            + "},true);"
+            + "})()";
 
     private String singleDate = "";
     private String singleLabel = "";
@@ -361,7 +375,10 @@ public class MainActivity extends Activity {
                 // 统一身份认证登录页：开了「记住密码」就走自动登录 / 挂抓取钩子。
                 // 注意要放在 pending 早退之前 —— 启动时的后台加载（无 pending）也会
                 // 撞上登录页，那正是自动登录最有用的场景。
-                if (url != null && url.contains("authserver/login")) {
+                // v3.7.4：WebVPN 门户自己的登录页（/login）也一并挂钩 ——
+                // 不同账号状态下的登录页可能落在其中任意一个。
+                if (url != null && (url.contains("authserver/login")
+                        || url.contains("vpn.neuq.edu.cn/login"))) {
                     handleLoginPage(view, url);
                 }
                 if (!(pendingQuery || pendingTerms || pendingSchedule || pendingSingle
@@ -1521,7 +1538,6 @@ public class MainActivity extends Activity {
      * 上一版就因为常量叫 WEB_SITE/WEB_MIRROR，把 tsiao.io 挂到了通道1。
      * 两条都实测过 HTTP 200 才写进来。
      */
-    private static final String WEB_CH1 = "https://neuq-classroom-query-2kb.pages.dev";
     private static final String WEB_CH2 = "https://neuq.tsiao.io/";
 
     /** 用系统浏览器打开外部链接（仓库页这类，不适合内嵌） */
@@ -1600,7 +1616,6 @@ public class MainActivity extends Activity {
         });
 
         morePage.findViewById(R.id.rowCache).setOnClickListener(v -> showCacheManager());
-        morePage.findViewById(R.id.rowChannel1).setOnClickListener(v -> openWebTable(WEB_CH1));
         morePage.findViewById(R.id.rowChannel2).setOnClickListener(v -> openWebTable(WEB_CH2));
         morePage.findViewById(R.id.rowAppRepo).setOnClickListener(v -> openUrl(APP_REPO));
         morePage.findViewById(R.id.rowCopyDiag).setOnClickListener(v -> copyDiag());
@@ -4332,29 +4347,134 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 编辑一门课：改名 / 改教师 / 改教室，作用于这门课的全部节次 */
+    /** 周次选择器的固定选项（下标即选项序号） */
+    private static final String[] WEEKS_OPTIONS = {"全周", "单周", "双周", "自定义"};
+
+    /** 周次选项 → weeks 数组（全周返回空数组，inWeek 对空数组直接放行） */
+    private static JSONArray weeksFromOption(int optIdx, int from, int to) {
+        JSONArray ws = new JSONArray();
+        switch (Math.max(0, Math.min(optIdx, WEEKS_OPTIONS.length - 1))) {
+            case 1:   // 单周
+                for (int w = 1; w <= 25; w += 2) ws.put(w);
+                break;
+            case 2:   // 双周
+                for (int w = 2; w <= 24; w += 2) ws.put(w);
+                break;
+            case 3:   // 自定义范围
+                for (int w = clamp(from, 1, 30); w <= clamp(to, 1, 30); w++) ws.put(w);
+                break;
+            default:  // 全周
+                break;
+        }
+        return ws;
+    }
+
+    /** 已有 weeks 数组 → 周次选项下标（全周 0 / 单周 1 / 双周 2 / 其余自定义 3） */
+    private static int optionFromWeeks(JSONArray weeks) {
+        if (weeks == null || weeks.length() == 0) return 0;
+        boolean allOdd = true, allEven = true;
+        for (int i = 0; i < weeks.length(); i++) {
+            int w = weeks.optInt(i, -1);
+            if (w % 2 != 1) allOdd = false;
+            if (w % 2 != 0) allEven = false;
+        }
+        if (allOdd) return 1;
+        if (allEven) return 2;
+        return 3;
+    }
+
+    /**
+     * 编辑一门课（WakeUp 式）：先列出这门课的全部节次，选一节进入编辑。
+     * 名称 / 教师 / 教室是整门课的属性；星期 / 节次 / 周次只改选中的那一节。
+     */
     private void editCourse(String oldName) {
-        // 找这门课的第一条记录当默认值
-        String teacher = "", room = "";
+        List<JSONObject> instances = new ArrayList<>();
         JSONArray cs = scheduleData.optJSONArray("courses");
         if (cs != null) {
             for (int i = 0; i < cs.length(); i++) {
                 JSONObject c = cs.optJSONObject(i);
-                if (c != null && oldName.equals(c.optString("name", ""))) {
-                    teacher = c.optString("teacher", "");
-                    room = c.optString("position", "");
-                    break;
-                }
+                if (c != null && oldName.equals(c.optString("name", ""))) instances.add(c);
             }
         }
+        if (instances.isEmpty()) return;
 
+        if (instances.size() == 1) {
+            showEditCourseDialog(oldName, instances.get(0));
+            return;
+        }
+        // 多节次：让用户挑要改的那一节
+        String[] items = new String[instances.size()];
+        for (int i = 0; i < instances.size(); i++) {
+            JSONObject c = instances.get(i);
+            int day = clamp(c.optInt("day", 1), 1, 7);
+            int st = c.optInt("startSection", 1), en = c.optInt("endSection", st);
+            items[i] = "周" + WD_CN[day - 1] + " " + st + "-" + en + " 节 · "
+                    + weeksText(c.optJSONArray("weeks"));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("选择要编辑的节次")
+                .setItems(items, (d, w) -> showEditCourseDialog(oldName, instances.get(w)))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 编辑指定节次：名称/教师/教室作用于整门课，星期/节次/周次只改这一节 */
+    private void showEditCourseDialog(final String oldName, final JSONObject target) {
         View form = LayoutInflater.from(this).inflate(R.layout.dialog_course_edit, null);
         final EditText nameEt = form.findViewById(R.id.ceName);
         final EditText teacherEt = form.findViewById(R.id.ceTeacher);
         final EditText roomEt = form.findViewById(R.id.ceRoom);
-        nameEt.setText(oldName);
-        teacherEt.setText(teacher);
-        roomEt.setText(room);
+        final Spinner daySp = form.findViewById(R.id.ceDay);
+        final Spinner startSp = form.findViewById(R.id.ceStart);
+        final Spinner endSp = form.findViewById(R.id.ceEnd);
+        final Spinner weeksSp = form.findViewById(R.id.ceWeeks);
+        final LinearLayout customRow = form.findViewById(R.id.ceCustomRow);
+        final Spinner fromSp = form.findViewById(R.id.ceWeekFrom);
+        final Spinner toSp = form.findViewById(R.id.ceWeekTo);
+
+        nameEt.setText(target.optString("name", oldName));
+        teacherEt.setText(target.optString("teacher", ""));
+        roomEt.setText(target.optString("position", ""));
+
+        String[] days = new String[7];
+        for (int i = 0; i < 7; i++) days[i] = "周" + WD_CN[i];
+        String[] sections = new String[PERIODS];
+        for (int i = 0; i < PERIODS; i++) sections[i] = "第 " + (i + 1) + " 节";
+        daySp.setAdapter(spinnerAdapter(days));
+        startSp.setAdapter(spinnerAdapter(sections));
+        endSp.setAdapter(spinnerAdapter(sections));
+        daySp.setSelection(clamp(target.optInt("day", 1), 1, 7) - 1);
+        int st = clamp(target.optInt("startSection", 1), 1, PERIODS);
+        int en = clamp(target.optInt("endSection", st), 1, PERIODS);
+        startSp.setSelection(st - 1);
+        endSp.setSelection(en - 1);
+
+        int maxW = Math.max(maxWeekOfView(), 20);
+        String[] weekLabels = new String[maxW];
+        for (int i = 0; i < maxW; i++) weekLabels[i] = "第 " + (i + 1) + " 周";
+        fromSp.setAdapter(spinnerAdapter(weekLabels));
+        toSp.setAdapter(spinnerAdapter(weekLabels));
+        JSONArray weeks = target.optJSONArray("weeks");
+        int wOpt = optionFromWeeks(weeks);
+        weeksSp.setAdapter(spinnerAdapter(WEEKS_OPTIONS));
+        weeksSp.setSelection(wOpt);
+        // 自定义范围预填：连续段取首尾；单双周取首末
+        if (weeks != null && weeks.length() > 0) {
+            int first = weeks.optInt(0, 1), last = weeks.optInt(weeks.length() - 1, first);
+            fromSp.setSelection(clamp(first, 1, maxW) - 1);
+            toSp.setSelection(clamp(last, 1, maxW) - 1);
+        }
+        customRow.setVisibility(wOpt == 3 ? View.VISIBLE : View.GONE);
+        weeksSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                customRow.setVisibility(pos == 3 ? View.VISIBLE : View.GONE);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         new AlertDialog.Builder(this)
                 .setTitle("编辑课程")
@@ -4365,30 +4485,55 @@ public class MainActivity extends Activity {
                         Toast.makeText(this, "课程名不能为空", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    applyCourseEdit(oldName, newName,
+                    applyInstanceEdit(oldName, target, newName,
                             teacherEt.getText().toString().trim(),
-                            roomEt.getText().toString().trim());
+                            roomEt.getText().toString().trim(),
+                            daySp.getSelectedItemPosition() + 1,
+                            startSp.getSelectedItemPosition() + 1,
+                            endSp.getSelectedItemPosition() + 1,
+                            weeksSp.getSelectedItemPosition(),
+                            fromSp.getSelectedItemPosition() + 1,
+                            toSp.getSelectedItemPosition() + 1);
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    /** 把编辑结果写回这门课的全部节次并落盘 */
-    private void applyCourseEdit(String oldName, String newName, String teacher, String room) {
+    /** 把编辑结果写回：名称/教师/教室全课生效，时间/周次只改选中节次 */
+    private void applyInstanceEdit(String oldName, JSONObject target, String newName,
+                                   String teacher, String room,
+                                   int day, int st, int en, int weeksOpt, int from, int to) {
         try {
-            JSONArray cs = scheduleData.getJSONArray("courses");
-            for (int i = 0; i < cs.length(); i++) {
-                JSONObject c = cs.optJSONObject(i);
-                if (c == null || !oldName.equals(c.optString("name", ""))) continue;
-                c.put("name", newName);
-                c.put("teacher", teacher);
-                c.put("position", room);
-            }
-            persistSchedule();
+            String oldKey = courseKey(target);
+            int oldDay = target.optInt("day", 0);
+            int oldSt = target.optInt("startSection", 0);
+
+            // 名称是整门课的属性：同步改名 + 修正调课记录的键
             if (!newName.equals(oldName)) {
-                // courseKey 以课名开头：不改调课记录的话，这门课的调课会全部失配
+                JSONArray cs = scheduleData.getJSONArray("courses");
+                for (int i = 0; i < cs.length(); i++) {
+                    JSONObject c = cs.optJSONObject(i);
+                    if (c != null && oldName.equals(c.optString("name", ""))) c.put("name", newName);
+                }
+            }
+            target.put("name", newName);
+            target.put("teacher", teacher);
+            target.put("position", room);
+            target.put("day", day);
+            target.put("startSection", st);
+            target.put("endSection", en);
+            JSONArray ws = weeksFromOption(weeksOpt, from, to);
+            if (ws.length() == 0) target.remove("weeks");   // 全周：不写 weeks
+            else target.put("weeks", ws);
+
+            // 时间被改 = 用户显式调整了这节课，原调课记录已无意义
+            if (day != oldDay || st != oldSt) {
+                AdjustCache.removeCourse(this, ScheduleCache.currentId(this), oldKey);
+            }
+            if (!newName.equals(oldName)) {
                 AdjustCache.rekeyRename(this, ScheduleCache.currentId(this), oldName, newName);
             }
+            persistSchedule();
             refreshCourseManager();
             renderSchedule();
             Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show();
@@ -4446,7 +4591,7 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** 手动添加一节课（考试 / 补课 / 谿课改课表都可以用），默认全周生效 */
+    /** 手动添加一节课（考试 / 补课 / 自建课表都可以用），可选周次（全周 / 单双周 / 自定义） */
     private void addCourseManually() {
         View form = LayoutInflater.from(this).inflate(R.layout.dialog_course_add, null);
         final EditText nameEt = form.findViewById(R.id.caName);
@@ -4455,6 +4600,10 @@ public class MainActivity extends Activity {
         final Spinner daySp = form.findViewById(R.id.caDay);
         final Spinner startSp = form.findViewById(R.id.caStart);
         final Spinner endSp = form.findViewById(R.id.caEnd);
+        final Spinner weeksSp = form.findViewById(R.id.caWeeks);
+        final LinearLayout customRow = form.findViewById(R.id.caCustomRow);
+        final Spinner fromSp = form.findViewById(R.id.caWeekFrom);
+        final Spinner toSp = form.findViewById(R.id.caWeekTo);
 
         String[] days = new String[7];
         for (int i = 0; i < 7; i++) days[i] = "周" + WD_CN[i];
@@ -4463,6 +4612,24 @@ public class MainActivity extends Activity {
         daySp.setAdapter(spinnerAdapter(days));
         startSp.setAdapter(spinnerAdapter(sections));
         endSp.setAdapter(spinnerAdapter(sections));
+
+        int maxW = Math.max(maxWeekOfView(), 20);
+        String[] weekLabels = new String[maxW];
+        for (int i = 0; i < maxW; i++) weekLabels[i] = "第 " + (i + 1) + " 周";
+        fromSp.setAdapter(spinnerAdapter(weekLabels));
+        toSp.setAdapter(spinnerAdapter(weekLabels));
+        toSp.setSelection(Math.min(15, maxW - 1));   // 默认 1-16 周，最常见
+        weeksSp.setAdapter(spinnerAdapter(WEEKS_OPTIONS));
+        weeksSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                customRow.setVisibility(pos == 3 ? View.VISIBLE : View.GONE);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         new AlertDialog.Builder(this)
                 .setTitle("添加课程")
@@ -4485,7 +4652,10 @@ public class MainActivity extends Activity {
                         c.put("day", day);
                         c.put("startSection", st);
                         c.put("endSection", en);
-                        // 不写 weeks = 全周生效（inWeek 对空数组直接放行）
+                        JSONArray ws = weeksFromOption(weeksSp.getSelectedItemPosition(),
+                                fromSp.getSelectedItemPosition() + 1,
+                                toSp.getSelectedItemPosition() + 1);
+                        if (ws.length() > 0) c.put("weeks", ws);   // 空数组 = 全周
                         JSONArray cs = scheduleData.optJSONArray("courses");
                         if (cs == null) {
                             cs = new JSONArray();
