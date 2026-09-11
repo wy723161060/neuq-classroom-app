@@ -24,7 +24,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.AdapterView;
-import android.widget.CheckBox;
 import android.widget.ImageButton;
 import android.widget.ArrayAdapter;
 import android.widget.DatePicker;
@@ -175,8 +174,12 @@ public class MainActivity extends Activity {
     private int webImportTries = 0;
     /** 本次导入是否用户手动发起（失败时要明确提示；启动的自动导入则静默） */
     private boolean webImportManual = false;
-    /** 打开通道/网页时先清一次历史：避免「返回」重放入口重定向、或在两个通道间串味 */
-    private boolean webClearHistoryOnLoad = false;
+    /**
+     * 本次浏览的入口落地页（重定向后的最终地址）。
+     * 返回键用它判断「是否还在入口页」：不在就 goBack，在就退出 ——
+     * 对入口重定向免疫，也不会把上一次浏览的历史带进来。
+     */
+    private String webEntryUrl = "";
     /** 本次会话是否已经提示过「每次打开自动导入」：问一次就够了 */
     private boolean autoImportPromptShown = false;
 
@@ -253,7 +256,9 @@ public class MainActivity extends Activity {
     private int singleTb = 1;
     private int singleTe = 2;
     private String highlightDate = "";      // 从课表跳过来时，要高亮的那一天
-    private int highlightTb = 0;            // 高亮的起始节次（0=不高亮）
+    private int highlightTb = 0;            // 高亮的起始节次（0=不高亮），用于顶部提示文案
+    /** 高亮时段在 days[].slots 数组里的下标（-1=不高亮）—— 与节次号是两回事，分开记 */
+    private int highlightSlotIdx = -1;
     private boolean singleMode = false;     // 当前结果页是不是「单时段」视图（带时段快捷切换）
     private String singleWeekday = "";      // 单时段视图的星期，用于时段快捷按钮重查
 
@@ -433,10 +438,13 @@ public class MainActivity extends Activity {
         // 后台加载登录页，让 Cookie 有机会自动续期
         loginView.loadUrl(HOME_URL);
 
-        // 用户设置过「每次打开自动从通道2导入」：后台静默刷新空教室数据。
-        // 通道2免登录，走自己的 webView，不干扰教务那边；失败就保持旧缓存。
+        // 用户设置过「每次打开自动从通道2导入」：延迟几秒再后台静默刷新。
+        // 不延迟的话，App 一启动就用隐藏 WebView 拉一个 1MB+ 的页面，
+        // 和课表首屏抢渲染资源 —— 用户感知就是「打开软件卡」。
         if (prefs().getBoolean(KEY_AUTO_IMPORT_WEB, false)) {
-            importRoomsFromWeb(false);
+            mainHandler.postDelayed(() -> {
+                if (!isFinishing() && !isDestroyed()) importRoomsFromWeb(false);
+            }, 4000);
         }
     }
 
@@ -479,6 +487,14 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
+        // 加载流畅度：通道页是大体积静态页（7 天数据内联在 HTML 里），
+        // 这几项能省掉不必要的布局/缩放开销
+        s.setTextZoom(100);                 // 跟随系统字体缩放会触发整页重排
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        s.setAllowFileAccess(false);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);   // 静态页吃 HTTP 缓存，二次打开快很多
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -494,15 +510,12 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, url);
                 if (url != null) webUrlText.setText(prettyHost(url));
 
-                // 通道数据页首个加载完成后清一次历史。
-                // 不清的话有两个毛病：
-                //  1) 入口 URL 若发生重定向，历史里留着旧地址，按「返回」会回到
-                //     旧地址再被弹回来 —— 表现为「返回键按了没反应」；
-                //  2) 上次浏览的通道（比如通道2）的历史还在，这次打开通道1
-                //     按「返回」会退回通道2的页面 —— 两个通道串味。
-                if (webClearHistoryOnLoad) {
-                    webClearHistoryOnLoad = false;
-                    view.clearHistory();
+                // 记录入口落地页：入口 URL 若有重定向，这里拿到的是最终地址，
+                // 它就是本次浏览的「根」—— 返回键退到根就直接出浏览器。
+                // 不用 clearHistory()：它在 onPageFinished 里调用存在时序竞态
+                // （后退列表可能在清除后又被 Chromium 提交），实测清不干净。
+                if (!webImportBusy && webEntryUrl.isEmpty() && url != null) {
+                    webEntryUrl = url;
                 }
 
                 // 通道 2 数据导入：页面渲染完成后等 SPA 稳定再提取
@@ -510,7 +523,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        // 返回：网页里还有上一页就退网页，到底了才回「更多」
+        // 返回：不在入口页就退网页，退到入口页（或重定向后的落地页）就回「更多」
         btnWebBack.setOnClickListener(v -> hideWebBrowser());
         btnWebReload.setOnClickListener(v -> webView.reload());
         btnWebOpenOuter.setOnClickListener(v -> {
@@ -519,9 +532,19 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** 关掉内嵌浏览器，回到「更多」页 */
+    /**
+     * 关掉内嵌浏览器，回到「更多」页。
+     *
+     * 返回键语义：浏览器的「根」是本次打开通道时的落地页 ——
+     *  · 不在根上（用户在站内点过链接）→ goBack 在站内后退；
+     *  · 已经在根上 → 直接退出浏览器。
+     * 这样即使 WebView 历史里残留着上一次通道的页面（clearHistory 有竞态清不干净），
+     * 也不会「按一下返回冒出另一个通道」。
+     */
     private void hideWebBrowser() {
-        if (webView.canGoBack()) {
+        String cur = webView.getUrl();
+        boolean atRoot = sameSitePage(cur, webEntryUrl);
+        if (!atRoot && webView.canGoBack()) {
             webView.goBack();
             return;
         }
@@ -529,6 +552,25 @@ public class MainActivity extends Activity {
         webPage.setVisibility(View.GONE);
         morePage.setVisibility(View.VISIBLE);
         showMore();
+    }
+
+    /** 同一「页面」判定：同主机且同路径（忽略结尾斜杠与查询/锚点），用于识别入口落地页 */
+    private static boolean sameSitePage(String a, String b) {
+        if (a == null || b == null || !a.startsWith("http") || !b.startsWith("http")) return false;
+        try {
+            android.net.Uri ua = android.net.Uri.parse(a);
+            android.net.Uri ub = android.net.Uri.parse(b);
+            String ha = ua.getHost(), hb = ub.getHost();
+            if (ha == null || !ha.equals(hb)) return false;
+            return normalizePath(ua.getPath()).equals(normalizePath(ub.getPath()));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String normalizePath(String p) {
+        if (p == null || p.isEmpty()) return "/";
+        return (p.endsWith("/") && p.length() > 1) ? p.substring(0, p.length() - 1) : p;
     }
 
     private void askDays() {
@@ -553,6 +595,7 @@ public class MainActivity extends Activity {
         queryDays = days;
         highlightDate = "";        // 手动查的，不带课表高亮
         highlightTb = 0;
+        highlightSlotIdx = -1;
         singleMode = false;        // 整表视图，不是单时段
         statusText.setText("正在打开教务查询页…");
         setBusy(true);
@@ -1160,7 +1203,9 @@ public class MainActivity extends Activity {
             hasAny = true;
 
             String label = slots.getJSONObject(s).getString("label");
-            boolean hit = isJumped && s == highlightTb - 1;
+            // 高亮「从课表跳过来」的那一个时段：按下标比，不能按节次号比 ——
+            // 「3-4节」的节次号是 3，但它在 slots 数组里的下标是 1，混用会高亮错行
+            boolean hit = isJumped && s == highlightSlotIdx;
             int shown = slotRow.length();
 
             // 标题：可折叠，默认展开；从课表跳来的那一节标记出来
@@ -1449,7 +1494,8 @@ public class MainActivity extends Activity {
         // 否则底部会停留在上一个 Tab，看起来像「更多」没被选中。
         currentTab = TAB_MORE;
         applyTabHighlight(TAB_MORE);
-        webClearHistoryOnLoad = true;   // 每次打开通道都当新会话，返回键语义才干净
+        webEntryUrl = "";   // 每次打开通道都重置「根」，返回键的语义以本次落地页为准
+        setWebImagesEnabled(true);   // 浏览要完整渲染，导入期间关掉的图片这里恢复
         webView.loadUrl(url);
         showContentView(webPage);
         webUrlText.setText(prettyHost(url));
@@ -2065,31 +2111,29 @@ public class MainActivity extends Activity {
      */
     private void refreshRooms() {
         View box = LayoutInflater.from(this).inflate(R.layout.dialog_room_source, null);
-        final CheckBox autoBox = box.findViewById(R.id.chkAutoImport);
-        autoBox.setChecked(prefs().getBoolean(KEY_AUTO_IMPORT_WEB, false));
+        final Switch swAuto = box.findViewById(R.id.swAutoImport);
+        swAuto.setChecked(prefs().getBoolean(KEY_AUTO_IMPORT_WEB, false));
+        // 开关随拨随存：不依赖用户点了哪个选项
+        swAuto.setOnCheckedChangeListener((b, on) ->
+                prefs().edit().putBoolean(KEY_AUTO_IMPORT_WEB, on).apply());
 
-        new AlertDialog.Builder(this)
-                .setTitle("选择空教室数据来源")
-                .setView(box)
-                .setItems(new CharSequence[]{"登录教务处查询（实时，需登录）",
-                                "从通道2网站读取（免登录，约几秒）"},
-                        (dialog, which) -> {
-                            prefs().edit()
-                                    .putBoolean(KEY_AUTO_IMPORT_WEB, autoBox.isChecked())
-                                    .apply();
-                            if (which == 0) {
-                                if (isEamsLoaded()) {
-                                    showLogin();
-                                    askDays();
-                                } else {
-                                    beginRoomQueryWithLogin();
-                                }
-                            } else {
-                                importRoomsFromWeb(true);
-                            }
-                        })
-                .setNegativeButton("取消", null)
-                .show();
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(box).create();
+        // 点卡片即选择：整张卡片是热区，比列表行好点，也不用先选再确认
+        box.findViewById(R.id.optEams).setOnClickListener(v -> {
+            dialog.dismiss();
+            if (isEamsLoaded()) {
+                showLogin();
+                askDays();
+            } else {
+                beginRoomQueryWithLogin();
+            }
+        });
+        box.findViewById(R.id.optWeb).setOnClickListener(v -> {
+            dialog.dismiss();
+            importRoomsFromWeb(true);
+        });
+        box.findViewById(R.id.btnCancel).setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
     }
 
     /* ---------- 通道 2 网站导入 ---------- */
@@ -2119,8 +2163,16 @@ public class MainActivity extends Activity {
             statusText.setText("正在从通道2读取数据…");
             Toast.makeText(this, "正在从通道2读取空教室数据…", Toast.LENGTH_SHORT).show();
         }
+        // 导入只需要表格文本：关掉图片加载，大页面的传输和渲染都省一大截
+        setWebImagesEnabled(false);
         webView.stopLoading();
         webView.loadUrl(WEB_CH2);
+    }
+
+    /** 通道页图片加载开关：导入时关（省流量省渲染），用户浏览时开 */
+    private void setWebImagesEnabled(boolean on) {
+        webView.getSettings().setLoadsImagesAutomatically(on);
+        webView.getSettings().setBlockNetworkImage(!on);
     }
 
     /**
@@ -2297,6 +2349,7 @@ public class MainActivity extends Activity {
     private void webImportFail() {
         boolean manual = webImportManual;
         webImportBusy = false;
+        setWebImagesEnabled(true);
         if (manual) {
             statusText.setText("通道2读取失败");
             Toast.makeText(this, "通道2读取失败，可改用教务处查询", Toast.LENGTH_LONG).show();
@@ -3601,12 +3654,48 @@ public class MainActivity extends Activity {
 
         String label = "第 " + week + " 周 周" + WD_CN[day - 1] + " " + qb + "-" + qe + " 节";
 
+        // ── 先看本机缓存 ─────────────────────────────────────────────
+        // 缓存里有目标日期的数据（通道2导入的 / 教务处查过的）就直接用它渲染并高亮：
+        // 免登录、零等待。尤其是只用通道2（免登录）的用户 —— 之前这条路径
+        // 会把他们甩到教务登录页，看起来就是「点了没反应」。
+        JSONObject cachedDay = findCachedDay(dateStr(target));
+        if (cachedDay != null) {
+            singleMode = true;
+            singleWeekday = WD_CN[day - 1];
+            highlightDate = dateStr(target);
+            highlightTb = qb;
+            highlightSlotIdx = slotIdx;   // 按时段下标高亮，不能拿节次号当下标
+            singleDate = dateStr(target);
+            singleTb = qb;
+            singleTe = qe;
+            singleLabel = label;
+            try {
+                JSONObject view = new JSONObject();
+                view.put("ok", true);
+                view.put("single", true);
+                view.put("days", new JSONArray().put(cachedDay));
+                view.put("fromCache", true);
+                view.put("cacheAgeText", ResultCache.ageText(this));
+                view.put("cacheExpired", ResultCache.isExpired(this));
+                view.put("updated", cachedDay.optString("date", ""));
+
+                if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
+                else applyIdleUi();
+                showHtml(buildHtml(view));
+                statusText.setText(label + " · 来自本机缓存");
+                return;
+            } catch (Exception e) {
+                // 渲染失败就走下面的教务实时查询，不挡路
+            }
+        }
+
         // 切到空教室 Tab（复用 switchTab，保证按钮显隐与 Tab 高亮不会两处漂移）
         if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
         else applyIdleUi();
 
         highlightDate = dateStr(target);
         highlightTb = qb;
+        highlightSlotIdx = slotIdx;
         singleMode = true;
         singleWeekday = WD_CN[day - 1];
 
@@ -3620,6 +3709,38 @@ public class MainActivity extends Activity {
         statusText.setText("正在查询 " + label + " 的空教室…");
         setBusy(true);
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
+    }
+
+    /** 从本机缓存里找指定日期的那一天数据（没有返回 null） */
+    private JSONObject findCachedDay(String date) {
+        String s = ResultCache.load(this);
+        if (s == null) return null;
+        try {
+            JSONObject o = new JSONObject(s);
+            if (!o.optBoolean("ok", false)) return null;
+            JSONArray days = o.optJSONArray("days");
+            if (days == null) return null;
+            for (int i = 0; i < days.length(); i++) {
+                JSONObject d = days.optJSONObject(i);
+                if (d != null && date.equals(d.optString("date"))) {
+                    // 只有真有数据的日期才算命中：全是 ok=false 的空壳不如直接去实时查
+                    JSONArray slots = d.optJSONArray("slots");
+                    boolean usable = false;
+                    if (slots != null) {
+                        for (int k = 0; k < slots.length(); k++) {
+                            JSONObject sl = slots.optJSONObject(k);
+                            if (sl != null && sl.optBoolean("ok", false)) {
+                                usable = true;
+                                break;
+                            }
+                        }
+                    }
+                    return usable ? d : null;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     /**
@@ -3637,6 +3758,7 @@ public class MainActivity extends Activity {
         String label = singleDate + " " + singleWeekday + " " + qb + "-" + qe + " 节";
 
         highlightTb = qb;
+        highlightSlotIdx = slotIdx;
         singleTb = qb;
         singleTe = qe;
         singleLabel = label;

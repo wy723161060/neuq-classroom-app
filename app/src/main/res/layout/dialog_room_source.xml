@@ -1,27 +1,177 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  空教室「数据来源」对话框的内容区。
+  空教室「数据来源」选择弹窗。
 
-  上半部分是 AlertDialog.setItems 的两条选项（登录教务处 / 通道2网站），
-  这里放的是一个勾选项：勾上之后，每次打开软件都会自动从通道2读取最新数据，
-  不用再手动刷新 —— 通道2是免登录的，静默后台跑没有任何负担。
+  原先是 AlertDialog.setItems（两行文字列表）+ 一个光秃秃的 CheckBox，
+  选项之间没有视觉分量，也看不出两条路的差别。改成「两张可选卡片」：
+  每张卡片自带标题 + 差异化说明 + 徽标（需登录 / 推荐），点整张卡片即选择；
+  底部一行是「每次打开自动从通道2导入」的开关，随开随生效。
+  卡片底色/描边沿用全局 card_bg 与 MoreBadge 的既有语言。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp">
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="20dp">
 
-    <CheckBox
-        android:id="@+id/chkAutoImport"
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:text="每次打开软件时自动从通道2导入"
-        android:textSize="13.5sp"
-        android:textColor="#222222" />
+        android:text="空教室数据从哪里来？"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:textColor="#1B1F27" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="两条路的数据经过同一套过滤规则，口径一致"
+        android:textSize="11.5sp"
+        android:textColor="#9AA2B4" />
+
+    <!-- 选项一：教务处实时 -->
+    <LinearLayout
+        android:id="@+id/optEams"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/card_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="14dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="13dp"
+        android:paddingBottom="13dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="教务处实时查询"
+                android:textSize="14.5sp"
+                android:textStyle="bold"
+                android:textColor="#222222" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="数据最新最准 · 逐时段串行查询，7 天约 1 分钟"
+                android:textSize="11.5sp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="#9AA2B4" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/MoreBadgeGrey"
+            android:text="需登录" />
+    </LinearLayout>
+
+    <!-- 选项二：通道 2 网站 -->
+    <LinearLayout
+        android:id="@+id/optWeb"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/card_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="14dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="13dp"
+        android:paddingBottom="13dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="通道 2 网站读取"
+                android:textSize="14.5sp"
+                android:textStyle="bold"
+                android:textColor="#1B4D8F" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="免登录，约几秒出结果 · 站点每小时自动更新"
+                android:textSize="11.5sp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="#9AA2B4" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/MoreBadge"
+            android:text="推荐" />
+    </LinearLayout>
+
+    <!-- 自动导入开关 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="每次打开软件时自动从通道 2 导入"
+                android:textSize="13.5sp"
+                android:textColor="#222222" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="后台静默更新，无感知；数据新鲜度取决于站点"
+                android:textSize="11sp"
+                android:textColor="#A8AFBD" />
+        </LinearLayout>
+
+        <Switch
+            android:id="@+id/swAutoImport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/sw_thumb"
+            android:trackTint="@color/sw_track" />
+    </LinearLayout>
+
+    <!-- 取消 -->
+    <TextView
+        android:id="@+id/btnCancel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="4dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="取消"
+        android:textSize="14sp"
+        android:textColor="#6c7686" />
 </LinearLayout>
