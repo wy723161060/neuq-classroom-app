@@ -90,6 +90,11 @@ public class MainActivity extends Activity {
     private ImageButton btnWebOpenOuter;
     private TextView statusText;
     private ProgressBar progressBar;
+    /**
+     * 导入/查询进度卡片（底部弹出）。只做「看得见的进度」：
+     * 用户可以按返回键把它收起（后台照常跑），所以它不参与任何状态机判断。
+     */
+    private Dialog progressDialog;
     private ImageButton btnRefreshData;
     private ImageButton btnImportTop;
     private ImageButton btnMoreTop;
@@ -167,6 +172,13 @@ public class MainActivity extends Activity {
     private int autoLoginTries = 0;
     /** 登录页弹了验证码：自动登录帮不上忙，交还用户；登录成功后复位 */
     private boolean captchaHold = false;
+    /**
+     * 自动登录引导提示是否已经弹过（每次会话一次就够）。
+     * 开关打开但还没存过密码时，用户不知道「这次登录会被记住」——
+     * 在登录页提示一次，之后同会话不再打扰；登录成功也不复位，
+     * 因为密码已经存下来了，提示没有第二次意义。
+     */
+    private boolean autoLoginHintShown = false;
 
     /* ---------- 通道 2 网站导入空教室 ---------- */
     /** 正在从通道 2 抓数据：webView 的 onPageFinished 据此分流（浏览 vs 导入） */
@@ -603,6 +615,10 @@ public class MainActivity extends Activity {
         // 先加载教务的空闲教室查询页（与浏览器操作一致，确保会话上下文正确），
         // 页面加载完成后在 onPageFinished 里注入脚本抓取
         pendingQuery = true;
+        // 底部进度卡片随操作一起出发：整表查询逐时段串行、耗时较长，
+        // 先把「要等多久、可以干嘛」告诉用户
+        showProgressDialog("正在查询空教室",
+                "实时取自教务系统 · 逐时段串行查询，可随时切到别的页面等待结果");
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
     }
@@ -722,6 +738,9 @@ public class MainActivity extends Activity {
                 progressBar.setVisibility(View.VISIBLE);
                 progressBar.setProgress(Math.round(cur * 100f / Math.max(total, 1)));
                 statusText.setText("查询中 " + cur + "/" + total + "  " + (msg == null ? "" : msg));
+                // 顶栏小进度条之外，同步推进底部进度卡片（没弹出时是 no-op）
+                updateProgressDialog(cur, total, "查询中 " + cur + "/" + total
+                        + (msg == null || msg.isEmpty() ? "" : " · " + msg));
             });
         }
 
@@ -760,6 +779,9 @@ public class MainActivity extends Activity {
         public void onResult(final String json) {
             mainHandler.post(() -> {
                 progressBar.setVisibility(View.GONE);
+                // 一次性收掉进度卡片：弹窗被用户收起后这里是 no-op（刻意设计，
+                // 收起 ≠ 取消，后台查询照常跑完）
+                dismissProgressDialog();
                 setBusy(false);
                 try {
                     JSONObject o = new JSONObject(json);
@@ -809,6 +831,9 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 setBusy(false);
                 progressBar.setVisibility(View.GONE);
+                // 第一阶段（取学期）结束就收卡片；选完学期后的抓取
+                // 由 startScheduleFetch 重新弹出，文案带上学期名
+                dismissProgressDialog();
                 try {
                     JSONObject o = new JSONObject(json);
                     if (!o.optBoolean("ok", false)) {
@@ -834,6 +859,7 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 setBusy(false);
                 progressBar.setVisibility(View.GONE);
+                dismissProgressDialog();   // 导入结束（含失败分支走 showImportFailure），统一收卡片
                 try {
                     JSONObject o = new JSONObject(json);
                     if (!o.optBoolean("ok", false)) {
@@ -1627,6 +1653,68 @@ public class MainActivity extends Activity {
      * 用系统 Dialog 而不是 BottomSheetDialog：本项目零第三方依赖
      * （见 app/build.gradle 末尾），为一个抽屉引入 material 库不划算。
      */
+    /* ---------- 导入/查询进度卡片 ---------- */
+
+    /**
+     * 弹出（或刷新）底部进度卡片。
+     * 已在显示时只更新文案：同一时刻只会有一个进行中的操作，
+     * 重复 new Dialog 会在旧弹窗上再摞一层，没必要。
+     * 换操作复用弹窗时必须把进度/状态行一并归零 —— 否则上个操作
+     * 跑到 86% 就点新的查询，卡片会从旧进度直接起步。
+     */
+    private void showProgressDialog(String title, String hint) {
+        if (progressDialog != null && progressDialog.isShowing()) {
+            ((TextView) progressDialog.findViewById(R.id.pgTitle)).setText(title);
+            ((TextView) progressDialog.findViewById(R.id.pgHint)).setText(hint);
+            ((ProgressBar) progressDialog.findViewById(R.id.pgBar)).setProgress(0);
+            ((TextView) progressDialog.findViewById(R.id.pgMsg)).setText("…");
+            return;
+        }
+        // 换了操作但旧弹窗还挂着（理论上 dismiss 都已接好，这里兜底）：
+        // 先收掉再开新的，避免引用失效
+        dismissProgressDialog();
+
+        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_progress, null);
+        ((TextView) sheet.findViewById(R.id.pgTitle)).setText(title);
+        ((TextView) sheet.findViewById(R.id.pgHint)).setText(hint);
+
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(sheet);
+        Window win = dialog.getWindow();
+        if (win != null) {
+            // 贴底、通栏：与缓存管理抽屉同一套观感（见 showCacheManager）
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            win.setGravity(Gravity.BOTTOM);
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+        // 可取消但只「收起」：按返回键只是把卡片收走，后台查询/导入继续跑，
+        // 结果回来后照常渲染。onResult 里的 dismissProgressDialog 对已收起的
+        // 弹窗是 no-op，这是刻意设计 —— 用户不该为了看进度被锁在当前页面。
+        dialog.setCancelable(true);
+        dialog.setOnCancelListener(d -> progressDialog = null);
+        dialog.show();
+        progressDialog = dialog;
+    }
+
+    /** 推进进度卡片。弹窗不在就静默忽略（不主动再弹，避免打扰收起了它的用户） */
+    private void updateProgressDialog(int cur, int total, String msg) {
+        if (progressDialog == null) return;
+        ProgressBar bar = progressDialog.findViewById(R.id.pgBar);
+        bar.setMax(Math.max(total, 1));
+        bar.setProgress(cur);
+        ((TextView) progressDialog.findViewById(R.id.pgMsg)).setText(msg);
+    }
+
+    /** 收起进度卡片；对已收起/已消失的弹窗是 no-op，各结束点可以无脑调用 */
+    private void dismissProgressDialog() {
+        if (progressDialog != null && progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
+        progressDialog = null;
+    }
+
     private void showCacheManager() {
         View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_cache, null);
         Dialog dialog = new Dialog(this);
@@ -2015,6 +2103,8 @@ public class MainActivity extends Activity {
         pendingQuery = pendingTerms = pendingSchedule = pendingSingle = false;
         pendingAskRange = false;
         loginHintShown = false;
+        // 操作被切 Tab 放弃了，进度卡片跟着收掉（和按返回键收起的「只藏不取消」不同）
+        dismissProgressDialog();
 
         // 启动时 currentTab 已是课表，此时点「课表」仍要重新渲染（可能刚导入完或日期已改）
         boolean sameTab = (currentTab == tab);
@@ -2078,6 +2168,10 @@ public class MainActivity extends Activity {
         setBusy(true);
         progressBar.setProgress(0);
         pendingTerms = true;
+        // 卡片先解释整体流程（取学期 → 选学期 → 抓课程），登录跳转、
+        // 读取学期期间都挂着；第一阶段结束由 onScheduleTerms 收掉，
+        // 选完学期 startScheduleFetch 再以学期名重新弹出
+        showProgressDialog("正在导入课表", "先取学期列表，选学期后自动抓取课程");
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         loginView.loadUrl(EAMS_BASE + "courseTableForStd.action");
     }
@@ -2162,6 +2256,8 @@ public class MainActivity extends Activity {
         if (manual) {
             statusText.setText("正在从通道2读取数据…");
             Toast.makeText(this, "正在从通道2读取空教室数据…", Toast.LENGTH_SHORT).show();
+            // 只在手动导入时弹进度卡片：启动时的静默自动导入不该打扰用户
+            showProgressDialog("正在读取通道2数据", "免登录 · 数据来自每小时自动更新的总表");
         }
         // 导入只需要表格文本：关掉图片加载，大页面的传输和渲染都省一大截
         setWebImagesEnabled(false);
@@ -2305,6 +2401,7 @@ public class MainActivity extends Activity {
             out.put("updated", raw.optString("updated", ""));
             ResultCache.save(this, out.toString());
             webImportBusy = false;
+            dismissProgressDialog();   // 通道2导入成功，收掉进度卡片（静默导入时本来就是 no-op）
 
             boolean onRoomTab = (currentTab == TAB_CLASSROOM);
             if (onRoomTab) {
@@ -2349,6 +2446,7 @@ public class MainActivity extends Activity {
     private void webImportFail() {
         boolean manual = webImportManual;
         webImportBusy = false;
+        dismissProgressDialog();   // 无论手动还是静默失败都收卡片，失败提示走 statusText/Toast
         setWebImagesEnabled(true);
         if (manual) {
             statusText.setText("通道2读取失败");
@@ -2392,6 +2490,13 @@ public class MainActivity extends Activity {
         // 走不到自动登录（没保存过 / 试完了 / 要验证码）：
         // 挂抓取钩子，用户手动登录这一次会被记住，下次就能自动
         view.evaluateJavascript(CRED_HOOK_JS, null);
+        // 引导提示：开关是开的、密码还没存，用户不知道这次登录会被记住。
+        // 每次会话只提一次 —— 登录页可能连加载几个 URL，不设防会连环弹 Toast
+        if (!autoLoginHintShown) {
+            autoLoginHintShown = true;
+            Toast.makeText(this,
+                    "已开启自动登录 · 这次登录后密码会被记住", Toast.LENGTH_LONG).show();
+        }
     }
 
     /** 自动登录脚本：填入账密后点同一个登录按钮，加密仍由页面自己的 JS 完成 */
@@ -2414,6 +2519,7 @@ public class MainActivity extends Activity {
      * 展示出来并允许一键复制 —— 教务一旦改版，靠这段信息就能直接定位。
      */
     private void showImportFailure(String title, String err, JSONObject payload) {
+        dismissProgressDialog();   // 导入到此为止，进度卡片先收掉再展示诊断
         lastDiagText = formatDiag(err, payload);
         statusText.setText(title + "：" + err);
         new AlertDialog.Builder(this)
@@ -2484,6 +2590,8 @@ public class MainActivity extends Activity {
         pendingSemesterId = semesterId;
         pendingTermName = termName;
         pendingSchedule = true;
+        // 第二阶段抓取重新弹卡片：用户选学期可能隔了一阵，把「现在抓的是哪张表」说清楚
+        showProgressDialog("正在导入课表", "正在抓取「" + termName + "」的课程，请稍候");
         statusText.setText("正在抓取「" + termName + "」…");
         setBusy(true);
         loginView.loadUrl(EAMS_BASE + "courseTableForStd.action");
@@ -3705,6 +3813,8 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         pendingSingle = true;
+        // 只查一组时段，很快；但引导卡片仍给出预期，避免「点了没反应」的错觉
+        showProgressDialog("正在查询空教室", "只查这一组时段，几秒就好");
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
         statusText.setText("正在查询 " + label + " 的空教室…");
         setBusy(true);
@@ -3763,6 +3873,7 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         pendingSingle = true;
+        showProgressDialog("正在查询空教室", "只查这一组时段，几秒就好");
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
 
         statusText.setText("正在查询 " + qb + "-" + qe + " 节的空教室…");

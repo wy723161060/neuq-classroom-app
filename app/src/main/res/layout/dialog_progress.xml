@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  导入 / 查询进度卡片 · 底部弹出
+
+  之前三条导入路径（教务处实时查询、通道2读取、导入课表）都只有顶栏一个
+  小 ProgressBar + statusText 文案，用户不知道「现在到底在干嘛、要多久」。
+  这里补一张底部进度卡片：标题说明在干什么、说明行是静态引导文案、
+  进度条反映整体进度、状态行动态报当前步骤。
+  样式对齐 sheet_cache.xml 的抽屉卡片（sheet_bg + 底部把手），
+  保持全套底部弹层观感一致。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/sheet_bg"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="18dp">
+
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:background="@drawable/sheet_handle" />
+
+    <TextView
+        android:id="@+id/pgTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="正在处理"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#1B1F27" />
+
+    <!-- 静态引导文案：告诉用户这一步的机制 / 预期耗时，由调用方按场景设置 -->
+    <TextView
+        android:id="@+id/pgHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text=""
+        android:textSize="11.5sp"
+        android:textColor="#9AA2B4" />
+
+    <ProgressBar
+        android:id="@+id/pgBar"
+        style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:max="100"
+        android:progress="0" />
+
+    <!-- 动态步骤文案：逐时段 / 逐步骤的实时状态，如「查询中 5/35 · …」 -->
+    <TextView
+        android:id="@+id/pgMsg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text=""
+        android:textSize="12.5sp"
+        android:textColor="#55617A" />
+</LinearLayout>
