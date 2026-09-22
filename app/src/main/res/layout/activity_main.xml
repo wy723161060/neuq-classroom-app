@@ -1,25 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#f5f6f8">
+    android:background="@color/app_background">
 
     <!--
       顶栏：左侧状态文字，右侧扁平化图标按钮（与页面卡片同层级，无立体投影）。
       按钮显隐由 MainActivity.applyUi(UiState) 一处统一控制。
     -->
     <LinearLayout
+        android:id="@+id/topBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="14dp"
-        android:paddingEnd="10dp"
-        android:paddingTop="9dp"
-        android:paddingBottom="9dp"
-        android:background="#ffffff"
-        android:elevation="2dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp"
+        android:background="@color/app_background">
 
         <TextView
             android:id="@+id/statusText"
@@ -28,8 +27,9 @@
             android:layout_weight="1"
             android:layout_marginEnd="10dp"
             android:text="教务系统"
-            android:textSize="13sp"
-            android:textColor="#555"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_primary"
             android:maxLines="2"
             android:ellipsize="end" />
 
@@ -52,8 +52,8 @@
         -->
         <ImageButton
             android:id="@+id/btnRefreshData"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_marginStart="6dp"
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_refresh"
@@ -64,8 +64,8 @@
 
         <ImageButton
             android:id="@+id/btnImportTop"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_marginStart="6dp"
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_import"
@@ -76,8 +76,8 @@
 
         <ImageButton
             android:id="@+id/btnMoreTop"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_marginStart="6dp"
             android:background="@drawable/btn_icon_flat"
             android:src="@drawable/ic_skeu_more"
@@ -93,6 +93,8 @@
         android:layout_width="match_parent"
         android:layout_height="3dp"
         android:max="100"
+        android:progressTint="@color/brand_blue_bright"
+        android:progressBackgroundTint="#E8EDF5"
         android:visibility="gone" />
 
     <FrameLayout
@@ -234,11 +236,15 @@
     </FrameLayout>
 
     <LinearLayout
+        android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="64dp"
         android:orientation="horizontal"
-        android:background="#ffffff"
-        android:elevation="6dp">
+        android:background="@color/app_background"
+        android:paddingTop="5dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="4dp">
 
         <LinearLayout
             android:id="@+id/tabSchedule"
@@ -247,22 +253,32 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="?android:attr/selectableItemBackground">
+            android:background="@drawable/nav_item_bg">
 
-            <View
-                android:id="@+id/indSchedule"
-                android:layout_width="26dp"
-                android:layout_height="3dp"
-                android:layout_marginBottom="5dp"
-                android:background="#1B4D8F" />
+            <ImageView
+                android:id="@+id/iconSchedule"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="课表"
+                android:src="@drawable/ic_nav_schedule"
+                android:tint="@color/brand_blue_bright" />
 
             <TextView
                 android:id="@+id/tvSchedule"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:text="课表"
-                android:textSize="13sp"
-                android:textColor="#1B4D8F" />
+                android:textSize="11.5sp"
+                android:textStyle="bold"
+                android:textColor="@color/brand_blue_bright" />
+
+            <View
+                android:id="@+id/indSchedule"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator" />
         </LinearLayout>
 
         <LinearLayout
@@ -272,23 +288,32 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="?android:attr/selectableItemBackground">
+            android:background="@drawable/nav_item_bg">
 
-            <View
-                android:id="@+id/indClassroom"
-                android:layout_width="26dp"
-                android:layout_height="3dp"
-                android:layout_marginBottom="5dp"
-                android:background="#1B4D8F"
-                android:visibility="invisible" />
+            <ImageView
+                android:id="@+id/iconClassroom"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="空教室"
+                android:src="@drawable/ic_nav_rooms"
+                android:tint="@color/text_muted" />
 
             <TextView
                 android:id="@+id/tvClassroom"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:text="空教室"
-                android:textSize="13sp"
-                android:textColor="#9aa2b4" />
+                android:textSize="11.5sp"
+                android:textColor="@color/text_muted" />
+
+            <View
+                android:id="@+id/indClassroom"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator"
+                android:visibility="invisible" />
         </LinearLayout>
 
         <!--
@@ -303,23 +328,32 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="?android:attr/selectableItemBackground">
+            android:background="@drawable/nav_item_bg">
 
-            <View
-                android:id="@+id/indMore"
-                android:layout_width="26dp"
-                android:layout_height="3dp"
-                android:layout_marginBottom="5dp"
-                android:background="#1B4D8F"
-                android:visibility="invisible" />
+            <ImageView
+                android:id="@+id/iconMore"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="更多"
+                android:src="@drawable/ic_nav_more"
+                android:tint="@color/text_muted" />
 
             <TextView
                 android:id="@+id/tvMore"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:text="更多"
-                android:textSize="13sp"
-                android:textColor="#9aa2b4" />
+                android:textSize="11.5sp"
+                android:textColor="@color/text_muted" />
+
+            <View
+                android:id="@+id/indMore"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator"
+                android:visibility="invisible" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

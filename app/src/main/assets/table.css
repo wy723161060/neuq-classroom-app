@@ -6,33 +6,33 @@
 
 :root {
   /* ── 页面 ── */
-  --page-bg: #f5f6f8;
-  --page-color: #222;
+  --page-bg: #F3F5F9;
+  --page-color: #171A21;
 
   /* ── 容器 ── */
   --container-bg: #ffffff;
-  --container-border: rgba(137, 137, 137, 0.28);
-  --container-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --container-border: #E7ECF3;
+  --container-shadow: 0 4px 14px rgba(36, 48, 68, 0.06);
 
   /* ── Tab 栏 ── */
-  --tabbar-bg: #f0f0f0;
-  --tabbar-border: #d8d8d8;
-  --tab-color: #888;
-  --tab-hover-bg: #e5e5e5;
-  --tab-active-bg: rgba(255, 255, 255, 0.85);
-  --tab-active-color: #777;
-  --tab-active-border: #777;
-  --tab-border: #d8d8d8;
+  --tabbar-bg: #EEF3FB;
+  --tabbar-border: #E1E8F3;
+  --tab-color: #667085;
+  --tab-hover-bg: #E4ECF9;
+  --tab-active-bg: #FFFFFF;
+  --tab-active-color: #1B4D8F;
+  --tab-active-border: #BED2EF;
+  --tab-border: #E1E8F3;
 
   /* ── 时段标题 ── */
   --timeslot-color: #777;
-  --timeslot-border: #e6e6e6;
+  --timeslot-border: #E7ECF3;
 
   /* ── 表格 ── */
-  --table-border: #e0e0e0;
-  --table-header-bg: #f7f7f7;
-  --floor-bg: #f7f7f7;
-  --building-bg: #f7f7f7;
+  --table-border: #EDF0F5;
+  --table-header-bg: #F8FAFD;
+  --floor-bg: #FAFBFD;
+  --building-bg: #FAFBFD;
   --data-color: inherit;
 
   /* ── 标记 ── */
@@ -51,7 +51,7 @@
   --warn-border: #ffe0b2;
 
   /* ── 强调蓝（App 主色） ── */
-  --brand: #1B4D8F;
+  --brand: #2F6FED;
 }
 
 * { box-sizing: border-box; }
@@ -60,7 +60,7 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  padding: 10px 10px 28px;
+  padding: 14px 12px 28px;
   font: 14px/1.6 "JetBrains Mono", -apple-system, "PingFang SC",
         "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
   color: var(--page-color);
@@ -73,15 +73,15 @@ body {
 
 h1 {
   font-size: 17px;
-  margin: 4px 0 2px;
-  text-align: center;
+  margin: 4px 2px 2px;
+  text-align: left;
   font-weight: 700;
   letter-spacing: .3px;
 }
 
 .info-text {
-  text-align: center;
-  margin: 2px 0 4px;
+  text-align: left;
+  margin: 2px 2px 4px;
   font-size: 12px;
   color: var(--info-color);
 }
@@ -91,7 +91,7 @@ h1 {
 .cache {
   margin: 8px 0;
   padding: 9px 12px;
-  border-radius: 9px;
+  border-radius: 12px;
   font-size: 12.5px;
   color: #1b5e20;
   background: #e8f5e9;
@@ -109,7 +109,7 @@ h1 {
   padding: 8px 12px;
   background: var(--container-bg);
   border: 1px solid var(--container-border);
-  border-radius: 10px;
+  border-radius: 14px;
   box-shadow: var(--container-shadow);
   font-size: 11.5px;
   color: #666;
@@ -128,7 +128,7 @@ h1 {
   padding: 9px 11px 10px;
   background: var(--container-bg);
   border: 1px solid var(--container-border);
-  border-radius: 10px;
+  border-radius: 14px;
   box-shadow: var(--container-shadow);
 }
 
@@ -149,10 +149,10 @@ h1 {
   flex: 1 1 auto;
   min-width: 68px;
   padding: 7px 9px;
-  border: 1px solid #d8d8d8;
-  border-radius: 8px;
-  background: linear-gradient(#ffffff, #f2f3f5);
-  color: #555;
+  border: 1px solid #DCE3ED;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #55617A;
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -160,12 +160,12 @@ h1 {
   transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
   -webkit-tap-highlight-color: transparent;
 }
-.slotbtn:active { background: #e9ecf1; }
+.slotbtn:active { background: #EEF3FB; }
 
 /* 当前正在看的这一组 */
 .slotbtn.cur {
   border-color: var(--brand);
-  background: linear-gradient(#2f6bb5, var(--brand));
+  background: var(--brand);
   color: #fff;
   box-shadow: 0 1px 3px rgba(27, 77, 143, .35);
 }
@@ -177,7 +177,7 @@ h1 {
 details.day {
   background: var(--container-bg);
   border: 1px solid var(--container-border);
-  border-radius: 10px;
+  border-radius: 14px;
   margin-bottom: 10px;
   box-shadow: var(--container-shadow);
   overflow: hidden;
@@ -246,7 +246,7 @@ details.day[open] summary::before { transform: rotate(90deg); }
   margin: 0 10px;
   background: var(--container-bg);
   border: 1px solid var(--container-border);
-  border-radius: 10px;
+  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -415,7 +415,7 @@ table.slot-table u {
 
 .empty {
   margin: 0 0 10px; padding: 26px 18px; text-align: center;
-  background: var(--container-bg, #fff); border-radius: 10px;
+  background: var(--container-bg, #fff); border-radius: 14px;
   color: var(--info-color, #8b92a3); font-size: 13px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
 }
@@ -425,18 +425,18 @@ table.slot-table u {
    实心蓝 + 通栏，是空态里唯一的主行动，所以做得足够显眼。 */
 .guide {
   display: block; width: 100%; margin: 16px 0 2px; padding: 11px 0;
-  border: 0; border-radius: 9px; background: #1B4D8F; color: #fff;
+  border: 0; border-radius: 14px; background: #2F6FED; color: #fff;
   font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.guide:active { background: #163F76; }
+.guide:active { background: #1B4D8F; }
 .guide.ghost {
   background: transparent; color: #1B4D8F; border: 1px solid #C9D8EE;
 }
 .guide.ghost:active { background: #eef3fb; }
 
 .tip {
-  margin: 10px 0 0; padding: 9px 12px; border-radius: 9px;
+  margin: 10px 0 0; padding: 10px 12px; border-radius: 12px;
   font-size: 11.5px; color: #5b6478;
   background: var(--container-bg, #fff); border: 1px solid #eef0f5;
 }

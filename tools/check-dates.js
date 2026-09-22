@@ -187,6 +187,17 @@ if (handWritten.length === 0) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════
+   5. 周次语义：真实当前周与正在查看的周必须分开
+   ══════════════════════════════════════════════════════════════ */
+console.log("\n[5] 周次语义：当前周不随手动翻周变化");
+ok(src.includes("private int actualCurrentWeek()"),
+   "存在不叠加 weekOffset 的 actualCurrentWeek()");
+ok(/private int currentWeek\(\)[\s\S]*?actualCurrentWeek\(\)\s*\+\s*weekOffset/.test(src),
+   "currentWeek() = actualCurrentWeek() + weekOffset");
+ok(/ssCurrentWeek[\s\S]{0,120}actualCurrentWeek\(\)/.test(src),
+   "课表设置页的「当前周」使用 actualCurrentWeek()");
+
 /* ══════════════════════════════════════════════════════════════ */
 console.log("\n" + "=".repeat(56));
 console.log("共 " + total + " 项断言，失败 " + failed + " 项");

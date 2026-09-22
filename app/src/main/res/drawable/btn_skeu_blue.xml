@@ -8,7 +8,7 @@
     <!-- 底部投影：让按键像凸起在纸面上 -->
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="12dp" />
+            <corners android:radius="14dp" />
             <solid android:color="#123A6E" />
         </shape>
     </item>
@@ -16,7 +16,7 @@
     <!-- 主体：略高一像素，露出下方投影 -->
     <item android:bottom="2dp">
         <shape android:shape="rectangle">
-            <corners android:radius="12dp" />
+            <corners android:radius="14dp" />
             <gradient
                 android:angle="270"
                 android:startColor="#3E7BC4"
@@ -30,7 +30,7 @@
     <!-- 顶部高光：一条细亮边，模拟光线打在圆角上 -->
     <item android:bottom="2dp">
         <shape android:shape="rectangle">
-            <corners android:radius="12dp" />
+            <corners android:radius="14dp" />
             <gradient
                 android:angle="270"
                 android:startColor="#66FFFFFF"

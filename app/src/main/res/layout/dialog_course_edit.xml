@@ -110,68 +110,42 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/ceWeeksPick"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="周次"
-            android:textSize="13sp"
-            android:textColor="#55617A" />
-
-        <Spinner
-            android:id="@+id/ceWeeks"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:spinnerMode="dialog"
-            android:popupBackground="#FFFFFF" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/ceCustomRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="4dp"
-        android:orientation="horizontal"
+        android:layout_height="54dp"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/cache_card_bg"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center_vertical"
-        android:visibility="gone">
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:contentDescription="周次"
+            android:src="@drawable/ic_course_calendar" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="范围"
-            android:textSize="13sp"
-            android:textColor="#55617A" />
-
-        <Spinner
-            android:id="@+id/ceWeekFrom"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:spinnerMode="dialog"
-            android:popupBackground="#FFFFFF" />
+            android:layout_marginStart="10dp"
+            android:text="周次"
+            android:textColor="#667085"
+            android:textSize="13sp" />
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
-            android:text="至"
-            android:textSize="13sp"
-            android:textColor="#9AA2B4" />
-
-        <Spinner
-            android:id="@+id/ceWeekTo"
+            android:id="@+id/ceWeeksValue"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:spinnerMode="dialog"
-            android:popupBackground="#FFFFFF" />
+            android:layout_marginStart="8dp"
+            android:gravity="end"
+            android:text="全周"
+            android:textColor="@color/brand_blue_bright"
+            android:textSize="14sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>

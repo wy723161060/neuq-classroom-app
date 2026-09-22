@@ -483,20 +483,34 @@
       var im, sections = [], day = -1;
       while ((im = idxRe.exec(m[2])) !== null) {
         day = parseInt(im[1], 10) + 1;
-        sections.push(parseInt(im[2], 10) + 1);
+        var section = parseInt(im[2], 10) + 1;
+        if (sections.indexOf(section) < 0) sections.push(section);
       }
 
       if (day !== -1 && sections.length > 0) {
         sections.sort(function (a, b) { return a - b; });
-        courses.push({
-          name: name,
-          teacher: teacher,
-          position: position,
-          day: day,
-          startSection: sections[0],
-          endSection: sections[sections.length - 1],
-          weeks: weeks
-        });
+        // 同一天若有不相邻的节次，拆成多个连续课块，避免把中间的
+        // 空档误画成一节并不存在的课。
+        var groupStart = sections[0], groupEnd = sections[0];
+        for (var si = 1; si <= sections.length; si++) {
+          if (si < sections.length && sections[si] === groupEnd + 1) {
+            groupEnd = sections[si];
+            continue;
+          }
+          courses.push({
+            name: name,
+            teacher: teacher,
+            position: position,
+            day: day,
+            startSection: groupStart,
+            endSection: groupEnd,
+            weeks: weeks
+          });
+          if (si < sections.length) {
+            groupStart = sections[si];
+            groupEnd = sections[si];
+          }
+        }
       }
     }
     return mergeContiguous(courses);
