@@ -4863,28 +4863,17 @@ public class MainActivity extends Activity {
 
         // 整天调休搬入的课程，其 weeks 属于源周，需要单独补进目标周。
         for (AdjustCache.Adjust m : dayIns) {
-            // 同周调休（如「周一 → 本周六」）：主循环已把源日的课移走，
-            // 但「课程本来也覆盖目标周就不重复摆放」会把它们全部跳过，
-            // 结果整门课从本周消失 —— 这里必须对源周=目标周的记录放行。
-            boolean sameWeek = (m.week == m.targetWeek);
             for (int i = 0; i < courses.length(); i++) {
                 JSONObject c = courses.optJSONObject(i);
                 if (c == null || c.optInt("day", 0) != m.srcDay) continue;
                 if (!inWeek(c.optJSONArray("weeks"), m.week)) continue;
-                if (!sameWeek && inWeek(c.optJSONArray("weeks"), week)) continue;
                 AdjustCache.Adjust a = adjByKey.get(courseKey(c));
-                // 同周调休下，带单节调课的课主循环已按调整后位置摆好，再补就重复
-                if (sameWeek && a != null) continue;
+                // 带单节调课/停课的课主循环已按调整结果摆放，这里不能重复补
+                if (a != null) continue;
                 if (a != null && a.isCancelled()) continue;
                 int day = m.day, st, en;
-                if (a != null) {
-                    day = a.day;
-                    st = a.startSection;
-                    en = a.endSection;
-                } else {
-                    st = c.optInt("startSection", 0);
-                    en = c.optInt("endSection", st);
-                }
+                st = c.optInt("startSection", 0);
+                en = c.optInt("endSection", st);
                 if (st < 1 || st > PERIODS) continue;
                 if (en < st) en = st;
                 if (en > PERIODS) en = PERIODS;
