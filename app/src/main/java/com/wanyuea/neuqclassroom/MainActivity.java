@@ -1154,9 +1154,15 @@ public class MainActivity extends Activity {
 
         /** 点击课程卡片 → 显示这节课的详情 */
         @JavascriptInterface
-        public void onCourseClick(final int day, final int startSection, final int endSection) {
-            mainHandler.post(() -> showCourseDetail(day, startSection, endSection));
-        }
+    public void onCourseClick(final int day, final int startSection, final int endSection) {
+        mainHandler.post(() -> showCourseDetail(day, startSection, endSection));
+    }
+
+    /** 点原位置虚线卡：查不到空教室，但应能看到这门课的详情和调课去向 */
+    @JavascriptInterface
+    public void onGhostClick(final int day, final int startSection, final int endSection) {
+        mainHandler.post(() -> showGhostCourseDetail(day, startSection, endSection));
+    }
 
         @JavascriptInterface
         public void prevWeek() {
@@ -3904,14 +3910,21 @@ public class MainActivity extends Activity {
         });
         render[0].run();
 
-        AlertDialog dialog = new AlertDialog.Builder(this, R.style.CalendarDialog)
-                .setTitle(title)
-                .setView(content)
-                .setPositiveButton("确定", (d, w) -> cb.onDate(selected[0]))
-                .setNegativeButton(negativeText, (d, w) -> {
-                    if (onCancel != null) onCancel.run();
-                })
-                .create();
+        final Dialog dialog = new Dialog(this);
+        TextView confirm = content.findViewById(R.id.calendarConfirm);
+        TextView cancel = content.findViewById(R.id.calendarCancel);
+        confirm.setOnClickListener(v -> {
+            dialog.dismiss();
+            cb.onDate(selected[0]);
+        });
+        cancel.setText(negativeText);
+        cancel.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (onCancel != null) onCancel.run();
+        });
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(content);
+        dialog.setCanceledOnTouchOutside(true);
         dialog.setOnCancelListener(d -> {
             if (onCancel != null) onCancel.run();
         });
@@ -3919,8 +3932,13 @@ public class MainActivity extends Activity {
         Window dialogWin = dialog.getWindow();
         if (dialogWin != null) {
             dialogWin.setLayout(
-                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT);
+            int side = Math.round(22 * getResources().getDisplayMetrics().density);
+            dialogWin.setGravity(Gravity.BOTTOM);
+            WindowManager.LayoutParams lp = dialogWin.getAttributes();
+            lp.width = getResources().getDisplayMetrics().widthPixels - side * 2;
+            dialogWin.setAttributes(lp);
             dialogWin.setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(0x00000000));
         }
@@ -3949,6 +3967,12 @@ public class MainActivity extends Activity {
     /** 日期 → 学期内 {周次, 星期}；不在本学期范围内返回 null */
     private int[] dateToWeekDay(String sid, long ms) {
         long start = termStartMs(sid);
+        // 开学日期按 semesterId 保存；调课入口传入的可能是课表槽位 id，
+        // 两者不同时若继续用 0 会触发“以本周为第 1 周”的错位推算。
+        if (start <= 0 && scheduleData != null) {
+            String termSid = scheduleData.optString("semesterId", "");
+            if (!termSid.isEmpty()) start = termStartMs(termSid);
+        }
         if (start <= 0) return null;
         long days = Math.round((startOfDay(ms) - startOfDay(start)) / (double) DAY_MS);
         if (days < 0) return null;
@@ -4345,10 +4369,10 @@ public class MainActivity extends Activity {
 
         // 确认整天调课
         sheet.findViewById(R.id.adjDmConfirm).setOnClickListener(v -> {
-            int[] src = dateToWeekDay(schedId, srcMs[0]);
-            if (src == null) src = inferWeekDayWithoutTermStart(srcMs[0]);
-            int[] dst = dateToWeekDay(schedId, dstMs[0]);
-            if (dst == null) dst = inferWeekDayWithoutTermStart(dstMs[0]);
+            String termSid = scheduleData == null ? ""
+                    : scheduleData.optString("semesterId", "");
+            int[] src = dateToWeekDay(termSid, srcMs[0]);
+            int[] dst = dateToWeekDay(termSid, dstMs[0]);
             if (src == null || dst == null) {
                 Toast.makeText(this, "日期不在本学期范围内，请先设置开学日期", Toast.LENGTH_LONG).show();
                 return;
@@ -4385,16 +4409,6 @@ public class MainActivity extends Activity {
 
         sheet.findViewById(R.id.adjClose).setOnClickListener(v -> dialog.dismiss());
         dialog.show();
-    }
-
-    /** 未设置开学日期时，用「本周周一」作虚拟第 1 周起点换算，保证整天调课可继续。 */
-    private int[] inferWeekDayWithoutTermStart(long ms) {
-        long base = mondayOf(System.currentTimeMillis());
-        long days = startOfDay(ms) - startOfDay(base);
-        int offset = (int) Math.floor(days / (7.0 * DAY_MS));
-        int week = offset + 1;
-        if (week < 1) week = 1;
-        return new int[]{week, weekdayOf(ms)};
     }
 
     /** 单节调课：独立底部弹窗，不在整天调课界面里展开。 */
@@ -5088,7 +5102,10 @@ public class MainActivity extends Activity {
                     Ghost g = ghost[r][c];
                     int span = clamp(g.span, 1, PERIODS - r);
                     for (int k = r + 1; k < r + span; k++) ghostCovered[k][c] = true;
-                    sb.append("<td class=\"cell\" rowspan=\"").append(span).append("\">")
+                    sb.append("<td class=\"cell\" rowspan=\"").append(span)
+                            .append("\" onclick=\"AndroidResultHost.onGhostClick(")
+                            .append(d).append(",").append(c + 1).append(",").append(r + 1)
+                            .append(")\">")
                             .append("<div class=\"ghost").append(g.cancelled ? " cancel" : "")
                             .append("\"><b>").append(esc(g.name)).append("</b>")
                             .append("<span>").append(esc(g.text)).append("</span></div></td>");
@@ -5498,6 +5515,51 @@ public class MainActivity extends Activity {
             conflictCourses.add(p);
         }
         showCourseDetailSheet(hit, conflictCourses);
+    }
+
+    /** 原位置虚线卡：用原始课程记录找详情，而不是按调整后位置找。 */
+    private void showGhostCourseDetail(int day, int st, int en) {
+        int week = currentWeek();
+        JSONArray courses = scheduleData == null ? null
+                : scheduleData.optJSONArray("courses");
+        if (courses == null) return;
+        String schedId = ScheduleCache.currentId(this);
+        JSONObject target = null;
+        for (int i = 0; i < courses.length(); i++) {
+            JSONObject c = courses.optJSONObject(i);
+            if (c == null || !inWeek(c.optJSONArray("weeks"), week)) continue;
+            int cst = c.optInt("startSection", 0);
+            int cen = Math.max(cst, c.optInt("endSection", cst));
+            if (c.optInt("day", 0) != day || cst > en || st > cen) continue;
+            AdjustCache.Adjust a = findEffective(schedId, courseKey(c), week);
+            boolean dayMoved = false;
+            for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
+                if (m.week == week && m.srcDay == day) {
+                    dayMoved = true;
+                    break;
+                }
+            }
+            if (!dayMoved && a == null) continue;
+            target = c;
+            break;
+        }
+        AdjustCache.Adjust dm = null;
+        for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
+            if (m.week == week && m.srcDay == day) {
+                dm = m;
+                break;
+            }
+        }
+        if (target == null) {
+            Toast.makeText(this, "这节课本周不上", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        CoursePlacement placement = new CoursePlacement(target,
+                dm != null ? dm : findEffective(schedId, courseKey(target), week),
+                day, st, Math.max(en, st));
+        List<CoursePlacement> conflictCourses = new ArrayList<>();
+        conflictCourses.add(placement);
+        showCourseDetailSheet(placement, conflictCourses);
     }
 
     private void showCourseDetailSheet(final CoursePlacement hit,
