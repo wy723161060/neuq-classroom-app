@@ -238,7 +238,7 @@ public class MainActivity extends Activity {
             + "function pad(n){return (n<10?'0':'')+n}"
             + "var base=new Date(+m[1],+m[2]-1,+m[3]);"
             + "function dstr(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}"
-            + "function wd(d){return '周'+'日一二三四五六'.charAt(d.getDay())}"
++ "function wd(d){return '日一二三四五六'.charAt(d.getDay())}"
             + "var SLOTS=['1-2','3-4','5-6','7-8','9-10','11-12'];"
             + "var LABEL={'1-2':'上午1-2节','3-4':'上午3-4节','5-6':'下午5-6节',"
             + "'7-8':'下午7-8节','9-10':'晚上9-10节','11-12':'晚上11-12节'};"
@@ -1171,7 +1171,17 @@ public class MainActivity extends Activity {
         sb.append("</div></div>");
     }
 
-    private String buildHtml(JSONObject o) throws Exception {        JSONArray days = o.getJSONArray("days");
+    private String buildHtml(JSONObject o) throws Exception {
+        JSONArray days = o.getJSONArray("days");
+        for (int i = 0; i < days.length(); i++) {
+            JSONObject day = days.optJSONObject(i);
+            if (day == null) continue;
+            String weekday = day.optString("weekday");
+            // 兼容旧缓存：旧通道数据曾存成“周三”，渲染端固定补“周”。
+            if (weekday.startsWith("周") && weekday.length() > 1) {
+                day.put("weekday", weekday.substring(1));
+            }
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
         sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
@@ -3144,7 +3154,10 @@ public class MainActivity extends Activity {
                 if (src == null) continue;
                 JSONObject day = new JSONObject();
                 day.put("date", src.optString("date"));
-                day.put("weekday", src.optString("weekday"));
+                // 旧版通道提取脚本曾存入“周三”，渲染端会再补“周”，先归一化避免“周周三”。
+                String weekday = src.optString("weekday");
+                if (weekday.startsWith("周")) weekday = weekday.substring(1);
+                day.put("weekday", weekday);
                 day.put("throttle", false);
 
                 // 网站只有 6 个时段；本机格式里还有一个「昼间1-8节」，
