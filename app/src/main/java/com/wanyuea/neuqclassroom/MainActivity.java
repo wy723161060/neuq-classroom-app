@@ -84,6 +84,12 @@ public class MainActivity extends Activity {
     /** 显示周六 / 周日（课表外观设置） */
     private static final String KEY_SHOW_SAT = "show_saturday";
     private static final String KEY_SHOW_SUN = "show_sunday";
+    /** 教务浏览器「电脑模式」：loginView 用桌面 UA 打开电脑版页面（状态持久化） */
+    private static final String KEY_EAMS_DESKTOP_UA = "eams_desktop_ua";
+    /** 「电脑模式」使用的桌面 UA（Windows / Chrome） */
+    private static final String DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/124.0.0.0 Safari/537.36";
     /** 通道 2 数据页里每天的时刻表（与模板 template.tera.html 一致） */
     private static final String[] WEB_SLOTS = {"1-2", "3-4", "5-6", "7-8", "9-10", "11-12"};
 
@@ -571,6 +577,8 @@ public class MainActivity extends Activity {
         });
         if (wv == loginView) {
             wv.addJavascriptInterface(new Bridge(), "Android");
+            // 上次退出时开着「电脑模式」就继续用桌面 UA
+            applyEamsUserAgent();
         }
     }
 
@@ -838,9 +846,8 @@ public class MainActivity extends Activity {
             loginView.loadUrl(url);
         });
         findViewById(R.id.btnEamsHelp).setOnClickListener(v -> showEamsBrowserHelp());
-        findViewById(R.id.tvEamsPcMode).setOnClickListener(v ->
-                Toast.makeText(this, "请把地址改为学校教务系统电脑版入口",
-                        Toast.LENGTH_SHORT).show());
+        findViewById(R.id.tvEamsPcMode).setOnClickListener(v -> toggleEamsDesktopMode());
+        updateEamsPcModeLabel();
         findViewById(R.id.tvEamsPasswordHelp).setOnClickListener(v ->
                 Toast.makeText(this,
                         "若密码一直错误，请到学校统一身份认证页面重置密码",
@@ -852,6 +859,41 @@ public class MainActivity extends Activity {
                 setEamsBrowserOverlay(false);
             }
         });
+    }
+
+    /**
+     * 「电脑模式」：切换 loginView 的 User-Agent（移动 ↔ 桌面）并重载当前页。
+     *
+     * 学校教务的电脑版页面按 UA 出不同的布局，所以切 UA 后必须重载才能生效。
+     * 状态写进 prefs：下次启动 setupWebView 时直接按上次的模式装配，
+     * 用户不用每次开 App 都重新点一遍。
+     */
+    private void toggleEamsDesktopMode() {
+        boolean desktop = !prefs().getBoolean(KEY_EAMS_DESKTOP_UA, false);
+        prefs().edit().putBoolean(KEY_EAMS_DESKTOP_UA, desktop).apply();
+        applyEamsUserAgent();
+        loginView.reload();
+        updateEamsPcModeLabel();
+        Toast.makeText(this, desktop ? "已切换到电脑模式" : "已切换到手机模式",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /** 按钮显示「下一步要切过去的模式」：电脑模式生效时提示可切回手机模式 */
+    private void updateEamsPcModeLabel() {
+        View b = findViewById(R.id.tvEamsPcMode);
+        if (!(b instanceof TextView)) return;
+        boolean desktop = prefs().getBoolean(KEY_EAMS_DESKTOP_UA, false);
+        ((TextView) b).setText(desktop ? "手机模式" : "电脑模式");
+    }
+
+    /** 按持久化的模式给 loginView 设置 UA */
+    private void applyEamsUserAgent() {
+        if (loginView == null) return;
+        boolean desktop = prefs().getBoolean(KEY_EAMS_DESKTOP_UA, false);
+        String ua = desktop
+                ? DESKTOP_UA
+                : WebSettings.getDefaultUserAgent(this);
+        loginView.getSettings().setUserAgentString(ua);
     }
 
     private void setEamsBrowserOverlay(boolean show) {
@@ -4807,13 +4849,18 @@ public class MainActivity extends Activity {
 
         // 整天调休搬入的课程，其 weeks 属于源周，需要单独补进目标周。
         for (AdjustCache.Adjust m : dayIns) {
+            // 同周调休（如「周一 → 本周六」）：主循环已把源日的课移走，
+            // 但「课程本来也覆盖目标周就不重复摆放」会把它们全部跳过，
+            // 结果整门课从本周消失 —— 这里必须对源周=目标周的记录放行。
+            boolean sameWeek = (m.week == m.targetWeek);
             for (int i = 0; i < courses.length(); i++) {
                 JSONObject c = courses.optJSONObject(i);
                 if (c == null || c.optInt("day", 0) != m.srcDay) continue;
                 if (!inWeek(c.optJSONArray("weeks"), m.week)) continue;
-                // 课程本来也覆盖目标周时不重复摆放。
-                if (inWeek(c.optJSONArray("weeks"), week)) continue;
+                if (!sameWeek && inWeek(c.optJSONArray("weeks"), week)) continue;
                 AdjustCache.Adjust a = adjByKey.get(courseKey(c));
+                // 同周调休下，带单节调课的课主循环已按调整后位置摆好，再补就重复
+                if (sameWeek && a != null) continue;
                 if (a != null && a.isCancelled()) continue;
                 int day = m.day, st, en;
                 if (a != null) {
@@ -5059,11 +5106,13 @@ public class MainActivity extends Activity {
         sb.append("</tbody></table></div>");
 
         // 本周调课清单：影子可能被别的课挡住（同一格只画得下一个），
-        // 清单保证「这周改了哪些课」一定看得到，不必再去翻设置面板
-        int adjustCount = adjusts.size() + dayOut.size() + dayIns.size();
+        // 清单保证「这周改了哪些课」一定看得到，不必再去翻设置面板。
+        // 计数与 dayMovesOf 用同一份去重后的列表，同周调休不重复计入。
+        List<AdjustCache.Adjust> dayMoves = dayMovesOf(week, dayOut, dayIns);
+        int adjustCount = adjusts.size() + dayMoves.size();
         if (adjustCount > 0) {
             sb.append("<div class=\"adjsum\"><b>本周调课 · ").append(adjustCount).append(" 条</b>");
-            for (AdjustCache.Adjust m : dayMovesOf(week, dayOut, dayIns)) {
+            for (AdjustCache.Adjust m : dayMoves) {
                 if (m.week == week) {
                     sb.append("<div class=\"row\">· ").append(dateOfWeekDay(m.week, m.srcDay))
                             .append(" 全天 → ").append(dateOfWeekDay(m.targetWeek, m.day))
@@ -5115,15 +5164,37 @@ public class MainActivity extends Activity {
         return first;
     }
 
-    /** 调课清单里整天调休部分的条目（本周搬出的 + 搬入的） */
+    /**
+     * 调课清单里整天调休部分的条目（本周搬出的 + 搬入的）。
+     *
+     * 源周=目标周的同周调休（如「周一 → 本周六」）会同时命中 dayOut 和
+     * dayIns —— 必须按对象去重，否则清单里同一条调休出现两次，
+     * 「本周调课 · N 条」也跟着虚高（实测两条同周调休 + 一条单节调课
+     * 显示成 5 条，应为 3 条）。Adjust 未重写 equals/hashCode，
+     * Set 按对象身份去重，正好符合需求。
+     */
     private static List<AdjustCache.Adjust> dayMovesOf(int week,
                                                        Map<Integer, AdjustCache.Adjust> dayOut,
                                                        List<AdjustCache.Adjust> dayIns) {
         List<AdjustCache.Adjust> out = new ArrayList<>();
+        Set<AdjustCache.Adjust> seen = new LinkedHashSet<>();
         for (AdjustCache.Adjust m : dayOut.values()) {
-            if (m.week == week) out.add(m);
+            if (m.week == week) {
+                out.add(m);
+                seen.add(m);
+            }
         }
-        out.addAll(dayIns);
+        for (AdjustCache.Adjust m : dayIns) {
+            if (seen.contains(m)) continue;
+            out.add(m);
+        }
+        // dayOut 是 HashMap，遍历顺序不确定；按源日排一遍，清单顺序稳定可读
+        out.sort((x, y) -> {
+            int c = Integer.compare(x.srcDay, y.srcDay);
+            if (c != 0) return c;
+            c = Integer.compare(x.week, y.week);
+            return c != 0 ? c : Integer.compare(x.day, y.day);
+        });
         return out;
     }
 
