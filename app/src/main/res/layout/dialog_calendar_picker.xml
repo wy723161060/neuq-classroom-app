@@ -3,11 +3,13 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/dialog_bg"
+    android:layout_marginStart="22dp"
+    android:layout_marginEnd="22dp"
     android:orientation="vertical"
-    android:paddingStart="20dp"
-    android:paddingEnd="20dp"
-    android:paddingTop="18dp"
-    android:paddingBottom="8dp">
+    android:paddingStart="18dp"
+    android:paddingEnd="18dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="2dp">
 
     <TextView
         android:id="@+id/calendarCaption"
@@ -22,16 +24,16 @@
         android:id="@+id/calendarSelected"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:text="2026年9月22日"
         android:textColor="#4E5360"
-        android:textSize="30sp"
+        android:textSize="25sp"
         android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="44dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="7dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -47,8 +49,8 @@
 
         <ImageButton
             android:id="@+id/calendarPrev"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="上个月"
             android:padding="9dp"
@@ -57,8 +59,8 @@
 
         <ImageButton
             android:id="@+id/calendarNext"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="下个月"
             android:padding="9dp"
@@ -68,7 +70,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="38dp"
         android:gravity="center"
         android:orientation="horizontal">
 
@@ -86,4 +88,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical" />
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="4dp" />
 </LinearLayout>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/sheet_bg"
+    android:orientation="vertical"
+    android:paddingTop="12dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:gravity="center"
+        android:text="选择删除范围"
+        android:textColor="#7D8798"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/optionOneWeek"
+        android:layout_width="match_parent"
+        android:layout_height="58dp"
+        android:layout_marginTop="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:text="仅当前周这一节课"
+        android:textColor="#171A21"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="#EDF0F5" />
+
+    <TextView
+        android:id="@+id/optionSameSlot"
+        android:layout_width="match_parent"
+        android:layout_height="58dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:text="同星期同教师同地点的全部周次"
+        android:textColor="#171A21"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="#EDF0F5" />
+
+    <TextView
+        android:id="@+id/optionAllCourse"
+        android:layout_width="match_parent"
+        android:layout_height="58dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:text="这门课程全部时间段"
+        android:textColor="#171A21"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="8dp"
+        android:background="#F2F3F6" />
+
+    <TextView
+        android:id="@+id/optionCancel"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:text="取消"
+        android:textColor="#D94B45"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+</LinearLayout>

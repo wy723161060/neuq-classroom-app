@@ -102,10 +102,161 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
+        <View
+            android:id="@+id/themeBackgroundImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <WebView
             android:id="@+id/loginView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- 教务浏览器覆盖层：地址栏、悬浮动作、底部辅助条。只包住教务 WebView。 -->
+        <LinearLayout
+            android:id="@+id/eamsBrowserOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="@color/app_background"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/update_card_bg"
+                    android:gravity="center_vertical"
+                    android:minHeight="50dp"
+                    android:orientation="horizontal"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="10dp">
+
+                    <EditText
+                        android:id="@+id/eamsAddressInput"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:hint="在此输入教务网址"
+                        android:importantForAutofill="no"
+                        android:inputType="textUri"
+                        android:maxLines="1"
+                        android:textColor="#43506B"
+                        android:textColorHint="#98A2B3"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/btnEamsGo"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="打开地址"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_course_copy"
+                    android:tint="@color/brand_blue_bright" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <View
+                    android:id="@+id/eamsWebAnchor"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="22dp"
+                    android:orientation="vertical">
+
+                    <ImageButton
+                        android:id="@+id/btnEamsHelp"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/grid_cell_bg"
+                        android:contentDescription="使用帮助"
+                        android:elevation="4dp"
+                        android:padding="15dp"
+                        android:src="@drawable/ic_course_teacher"
+                        android:tint="@color/brand_blue_bright" />
+
+                    <ImageButton
+                        android:id="@+id/btnEamsDownload"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:layout_marginTop="12dp"
+                        android:background="@drawable/grid_cell_bg"
+                        android:contentDescription="读取导入"
+                        android:elevation="4dp"
+                        android:padding="15dp"
+                        android:src="@drawable/ic_skeu_import"
+                        android:tint="@color/brand_blue_bright" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
+
+                <ImageButton
+                    android:id="@+id/btnEamsBack"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="返回"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_skeu_back"
+                    android:tint="#43506B" />
+
+                <TextView
+                    android:id="@+id/tvEamsPcMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/btn_outline_blue"
+                    android:gravity="center"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="电脑模式"
+                    android:textColor="#43506B"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvEamsPasswordHelp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/btn_outline_blue"
+                    android:gravity="center"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="密码一直错误?"
+                    android:textColor="#43506B"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <WebView
             android:id="@+id/resultView"

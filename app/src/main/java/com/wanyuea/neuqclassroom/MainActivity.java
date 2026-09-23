@@ -8,8 +8,10 @@ import android.graphics.drawable.GradientDrawable;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -34,6 +36,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
@@ -91,6 +94,8 @@ public class MainActivity extends Activity {
 
     private WebView loginView;
     private WebView resultView;
+    private View eamsBrowserOverlay;
+    private EditText eamsAddressInput;
     private WebView webView;          // 内嵌浏览器：空闲教室总表网页
     private LinearLayout webPage;     // 内嵌浏览器整块（标题栏 + 进度条 + WebView）
     private TextView webUrlText;
@@ -100,6 +105,8 @@ public class MainActivity extends Activity {
     /** 课表设置 / 课程管理两个子页（原生整页，从课表设置面板进入） */
     private View schedSettingsPage;
     private View courseManagerPage;
+    /** 自定义背景图所在层：放在内容容器最底部，图片透出来后卡片仍保持可读。 */
+    private View themeBackgroundImage;
     private ImageButton btnWebOpenOuter;
     private TextView statusText;
     private ProgressBar progressBar;
@@ -118,6 +125,8 @@ public class MainActivity extends Activity {
     private String css = "";
     private String scheduleCss = "";
     private boolean autoLoginActive = false;
+    /** 冲突格子里用户点选的课程偏好；只影响界面显示，不修改课表数据。 */
+    private final Map<String, String> conflictPrefs = new HashMap<>();
 
     /* ---------- 底部 Tab ---------- */
     private static final int TAB_CLASSROOM = 0;
@@ -190,6 +199,8 @@ public class MainActivity extends Activity {
     private boolean captchaHold = false;
     /** 本会话是否出现过统一身份认证登录页（用于判断「该提醒补录密码」的时机） */
     private boolean loginPageSeen = false;
+    /** 用户是否主动要求进入教务/登录流程；启动后台会话探测不算。 */
+    private boolean loginRequested = false;
     /** 「自动登录未生效」补救提示是否已经给过（每次会话最多一次，不连环打扰） */
     private boolean autoLoginMissHintShown = false;
     /**
@@ -333,6 +344,7 @@ public class MainActivity extends Activity {
 
     private static final String PREFS = "neuq_prefs";
     private static final String KEY_TERM_START = "termStart_";    // 第 1 周周一，毫秒
+    private static final int REQUEST_THEME_IMAGE = 6211;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -342,6 +354,8 @@ public class MainActivity extends Activity {
 
         loginView = findViewById(R.id.loginView);
         resultView = findViewById(R.id.resultView);
+        themeBackgroundImage = findViewById(R.id.themeBackgroundImage);
+        setupEamsBrowserOverlay();
         statusText = findViewById(R.id.statusText);
         progressBar = findViewById(R.id.progressBar);
         btnRefreshData = findViewById(R.id.btnRefreshData);
@@ -797,8 +811,66 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void setupEamsBrowserOverlay() {
+        eamsBrowserOverlay = findViewById(R.id.eamsBrowserOverlay);
+        eamsAddressInput = findViewById(R.id.eamsAddressInput);
+        loginView = findViewById(R.id.loginView);
+        View anchor = findViewById(R.id.eamsWebAnchor);
+
+        // 把 WebView 移进覆盖层，这样地址栏、悬浮按钮与教务网页一起出现/消失。
+        if (anchor != null && loginView.getParent() != anchor.getParent()) {
+            ((ViewGroup) anchor.getParent()).addView(loginView, 0,
+                    new FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT));
+            anchor.setVisibility(View.GONE);
+        }
+
+        findViewById(R.id.btnEamsGo).setOnClickListener(v -> {
+            String url = eamsAddressInput.getText().toString().trim();
+            if (url.isEmpty()) return;
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                url = "https://" + url;
+            }
+            loginView.loadUrl(url);
+        });
+        findViewById(R.id.btnEamsHelp).setOnClickListener(v -> showEamsBrowserHelp());
+        findViewById(R.id.tvEamsPcMode).setOnClickListener(v ->
+                Toast.makeText(this, "请把地址改为学校教务系统电脑版入口",
+                        Toast.LENGTH_SHORT).show());
+        findViewById(R.id.tvEamsPasswordHelp).setOnClickListener(v ->
+                Toast.makeText(this,
+                        "若密码一直错误，请到学校统一身份认证页面重置密码",
+                        Toast.LENGTH_LONG).show());
+        findViewById(R.id.btnEamsBack).setOnClickListener(v -> {
+            if (loginView.canGoBack()) {
+                loginView.goBack();
+            } else {
+                setEamsBrowserOverlay(false);
+            }
+        });
+    }
+
+    private void setEamsBrowserOverlay(boolean show) {
+        if (eamsBrowserOverlay != null) {
+            eamsBrowserOverlay.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void showEamsBrowserHelp() {
+        new AlertDialog.Builder(this)
+                .setTitle("教务浏览器说明")
+                .setMessage("1. 输入学校教务系统网址并打开；\n"
+                        + "2. 登录统一身份认证；\n"
+                        + "3. 已登录后，点右下角“下载”读取导入数据。\n"
+                        + "“记住密码”开启时会自动填入账号密码。")
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
     private void showLogin() {
         showContentView(loginView);
+        setEamsBrowserOverlay(true);
         statusText.setText("教务系统");
         applyUi(UiState.LOGIN);
     }
@@ -827,6 +899,7 @@ public class MainActivity extends Activity {
 
     private void showHtml(String html) {
         showContentView(resultView);
+        setEamsBrowserOverlay(false);
         applyUi(UiState.ROOM_DATA);
         resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -883,10 +956,11 @@ public class MainActivity extends Activity {
                             "本次登录需要验证码，请手动输入完成登录", Toast.LENGTH_LONG).show();
                 } else if ("noform".equals(code)) {
                     statusText.setText("自动登录未找到登录框 · 请手动登录");
-                    Toast.makeText(MainActivity.this,
-                            "自动登录没找到登录框：这个登录页的输入框没被识别到，"
-                                    + "请手动登录（欢迎反馈该页面截图以便适配）",
-                            Toast.LENGTH_LONG).show();
+                    if (loginRequested) {
+                        Toast.makeText(MainActivity.this,
+                                "自动登录没找到登录框：请手动登录",
+                                Toast.LENGTH_LONG).show();
+                    }
                 } else if ("nobutton".equals(code)) {
                     statusText.setText("自动登录未找到登录按钮 · 请手动登录");
                 } else if ("stuck".equals(code)) {
@@ -909,6 +983,7 @@ public class MainActivity extends Activity {
                 // 收起 ≠ 取消，后台查询照常跑完）
                 dismissProgressDialog();
                 setBusy(false);
+                setEamsBrowserOverlay(false);
                 try {
                     JSONObject o = new JSONObject(json);
                     if (!o.optBoolean("ok", false)) {
@@ -1079,9 +1154,12 @@ public class MainActivity extends Activity {
      * pending 标记保留，用户登完回到教务页时再接着弹。
      */
     private void beginRoomQueryWithLogin() {
+        loginRequested = true;
         pendingAskRange = true;
         loginHintShown = false;
         showContentView(loginView);
+        setEamsBrowserOverlay(true);
+        eamsAddressInput.setText(EAMS_BASE + "classroom/apply/free!search.action");
         statusText.setText("请先登录教务，登录后选择查询范围");
         setBusy(true);
         progressBar.setProgress(0);
@@ -2178,6 +2256,8 @@ public class MainActivity extends Activity {
             ThemeStore.reset(this);
             applyTheme();
             renderThemeSheet(sheet);
+            sheet.findViewById(R.id.themeImageAlpha).setEnabled(false);
+            sheet.findViewById(R.id.themeImageAlpha).setOnTouchListener((view, event) -> true);
             toastThemeApplied();
         });
         sheet.findViewById(R.id.btnThemeClose).setOnClickListener(v -> dialog.dismiss());
@@ -2188,6 +2268,8 @@ public class MainActivity extends Activity {
         int accent = ThemeStore.accent(this);
         int background = ThemeStore.background(this);
         int surface = ThemeStore.surface(this);
+        boolean hasImage = ThemeStore.hasImage(this);
+        int imageAlpha = ThemeStore.imageAlpha(this);
 
         sheet.findViewById(R.id.themePreview).setBackgroundColor(surface);
         View accentBar = sheet.findViewById(R.id.themePreviewAccent);
@@ -2222,6 +2304,7 @@ public class MainActivity extends Activity {
         addThemeSwatches(sheet.findViewById(R.id.themeBackgroundSwatches),
                 ThemeStore.BACKGROUNDS, background, color -> {
                     ThemeStore.setBackground(this, color);
+                    ThemeStore.clearImage(this);
                     applyTheme();
                     renderThemeSheet(sheet);
                     toastThemeApplied();
@@ -2233,6 +2316,35 @@ public class MainActivity extends Activity {
                     renderThemeSheet(sheet);
                     toastThemeApplied();
                 });
+
+        TextView imageState = sheet.findViewById(R.id.themeImageState);
+        imageState.setText(hasImage ? "已使用自定义背景图" : "未设置背景图");
+        TextView alphaLabel = sheet.findViewById(R.id.themeImageAlphaLabel);
+        alphaLabel.setText("背景图透明度 " + imageAlpha + "%");
+        alphaLabel.setEnabled(hasImage);
+        SeekBar alpha = sheet.findViewById(R.id.themeImageAlpha);
+        alpha.setEnabled(hasImage);
+        alpha.setProgress(imageAlpha);
+        alpha.setOnTouchListener(hasImage ? null : (v, event) -> true);
+        alpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (!fromUser) return;
+                ThemeStore.setImageAlpha(MainActivity.this, value);
+                alphaLabel.setText("背景图透明度 " + value + "%");
+                applyTheme();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+
+        sheet.findViewById(R.id.btnThemePickImage).setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("image/*");
+            startActivityForResult(intent, REQUEST_THEME_IMAGE);
+        });
     }
 
     private interface ThemeColorPicked {
@@ -2291,6 +2403,24 @@ public class MainActivity extends Activity {
         if (topBar != null) topBar.setBackgroundColor(background);
         if (bottomNav != null) bottomNav.setBackgroundColor(background);
 
+        boolean hasImage = ThemeStore.hasImage(this);
+        if (themeBackgroundImage != null) {
+            if (hasImage) {
+                android.graphics.Bitmap bmp = ThemeStore.image(this);
+                if (bmp != null) {
+                    themeBackgroundImage.setBackground(new android.graphics.drawable.BitmapDrawable(
+                            getResources(), bmp));
+                    themeBackgroundImage.setVisibility(View.VISIBLE);
+                    themeBackgroundImage.getBackground().setAlpha(
+                            ThemeStore.imageAlpha(this) * 255 / 100);
+                } else {
+                    themeBackgroundImage.setVisibility(View.GONE);
+                }
+            } else {
+                themeBackgroundImage.setVisibility(View.GONE);
+            }
+        }
+
         getWindow().setStatusBarColor(background);
         getWindow().setNavigationBarColor(surface);
 
@@ -2302,7 +2432,15 @@ public class MainActivity extends Activity {
                 background, 0xFFD8DFE9, 0.55f)));
 
         View content = findViewById(android.R.id.content);
-        if (content != null) applyThemeToView(content);
+        if (content != null) {
+            for (int id : new int[]{R.id.moreScroll, R.id.schedSettingsScroll}) {
+                View scroll = content.findViewById(id);
+                if (scroll != null) scroll.setBackgroundColor(0x00000000);
+            }
+            View courseManager = content.findViewById(R.id.courseManagerPage);
+            if (courseManager != null) courseManager.setBackgroundColor(0x00000000);
+            applyThemeToView(content);
+        }
         applyTabHighlight(currentTab);
 
         if (currentTab == TAB_SCHEDULE && scheduleData != null
@@ -2345,6 +2483,21 @@ public class MainActivity extends Activity {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
                 applyThemeToView(group.getChildAt(i));
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_THEME_IMAGE
+                && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            if (ThemeStore.importImage(this, data.getData())) {
+                applyTheme();
+                Toast.makeText(this, "自定义背景图已应用", Toast.LENGTH_SHORT).show();
+            } else {
+                applyTheme();
+                Toast.makeText(this, "背景图读取失败，请换一张图片", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -2931,6 +3084,8 @@ public class MainActivity extends Activity {
         // 早先这里只 loadUrl 不切视图，从「空课表 → 登录教务处并导入课表」点进来时，
         // 界面纹丝不动、只有一个 Toast 飘过 —— 表现就是「点了没反应」。
         showContentView(loginView);
+        setEamsBrowserOverlay(true);
+        eamsAddressInput.setText(EAMS_BASE + "courseTableForStd.action");
         statusText.setText("正在打开教务课表页…");
         setBusy(true);
         progressBar.setProgress(0);
@@ -2940,6 +3095,7 @@ public class MainActivity extends Activity {
         // 选完学期 startScheduleFetch 再以学期名重新弹出
         showProgressDialog("正在导入课表", "先取学期列表，选学期后自动抓取课程");
         loginHintShown = false;   // 新的一次操作，登录提示重新开始算
+        loginRequested = true;
         loginView.loadUrl(EAMS_BASE + "courseTableForStd.action");
     }
 
@@ -2956,6 +3112,7 @@ public class MainActivity extends Activity {
         } else {
             renderSchedule();
         }
+        setEamsBrowserOverlay(false);
         statusText.setText("「" + ScheduleCache.currentName(this) + "」已导入 · "
                 + courseCount + " 门课" + (extra == null ? "" : extra));
         refreshMorePage();
@@ -3358,6 +3515,8 @@ public class MainActivity extends Activity {
         boolean enabled = CredentialStore.isEnabled(this);
         if (!enabled) return;
         loginPageSeen = true;
+        // 启动后台探测遇到登录页：只静默尝试一次自动填表，失败也不打扰主界面。
+        if (!loginRequested) return;
 
         String[] cred = CredentialStore.read(this);
         if (cred != null && autoLoginTries < 3 && !captchaHold) {
@@ -3604,8 +3763,8 @@ public class MainActivity extends Activity {
         shown[0].set(Calendar.DAY_OF_MONTH, 1);
         final Runnable[] render = new Runnable[1];
         float density = getResources().getDisplayMetrics().density;
-        int cellSize = Math.round(42 * density);
-        int margin = Math.round(3 * density);
+        int cellSize = Math.round(36 * density);
+        int margin = Math.round(2 * density);
         int accent = 0xFF5266A3;
         int text = 0xFF4E5360;
         int muted = 0xFF98A0B2;
@@ -3621,8 +3780,9 @@ public class MainActivity extends Activity {
             first.set(Calendar.DAY_OF_MONTH, 1);
             int leading = weekdayOf(first.getTimeInMillis()) - 1;
             int maxDay = first.getActualMaximum(Calendar.DAY_OF_MONTH);
-            int cells = 42;
-            for (int row = 0; row < 6; row++) {
+            int rows = (leading + maxDay <= 35) ? 5 : 6;
+            int cells = rows * 7;
+            for (int row = 0; row < rows; row++) {
                 LinearLayout line = new LinearLayout(this);
                 line.setOrientation(LinearLayout.HORIZONTAL);
                 line.setGravity(Gravity.CENTER);
@@ -3660,7 +3820,7 @@ public class MainActivity extends Activity {
                     cell.setLayoutParams(cellLp);
                     cell.setGravity(Gravity.CENTER);
                     cell.setText(String.valueOf(day));
-                    cell.setTextSize(14f);
+                    cell.setTextSize(13f);
                     cell.setTypeface(null, isSelected
                             ? android.graphics.Typeface.BOLD
                             : android.graphics.Typeface.NORMAL);
@@ -3699,7 +3859,7 @@ public class MainActivity extends Activity {
         });
         render[0].run();
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.CalendarDialog)
                 .setTitle(title)
                 .setView(content)
                 .setPositiveButton("确定", (d, w) -> cb.onDate(selected[0]))
@@ -3711,6 +3871,14 @@ public class MainActivity extends Activity {
             if (onCancel != null) onCancel.run();
         });
         dialog.show();
+        Window dialogWin = dialog.getWindow();
+        if (dialogWin != null) {
+            dialogWin.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+            dialogWin.setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(0x00000000));
+        }
     }
 
     private static String formatCalendarDate(long ms) {
@@ -3836,9 +4004,13 @@ public class MainActivity extends Activity {
 
         syncScheduleSheet(sheet, dialog);
 
-        sheet.findViewById(R.id.schedAdd).setOnClickListener(v -> {
+        sheet.findViewById(R.id.schedAddCourse).setOnClickListener(v -> {
             dialog.dismiss();
-            addSchedule();
+            if (scheduleData == null) {
+                Toast.makeText(this, "请先创建或导入一张课表", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            addCourseManually();
         });
         sheet.findViewById(R.id.schedAdjust).setOnClickListener(v -> {
             if (scheduleData == null) {
@@ -4150,7 +4322,9 @@ public class MainActivity extends Activity {
         // 确认整天调课
         sheet.findViewById(R.id.adjDmConfirm).setOnClickListener(v -> {
             int[] src = dateToWeekDay(schedId, srcMs[0]);
+            if (src == null) src = inferWeekDayWithoutTermStart(srcMs[0]);
             int[] dst = dateToWeekDay(schedId, dstMs[0]);
+            if (dst == null) dst = inferWeekDayWithoutTermStart(dstMs[0]);
             if (src == null || dst == null) {
                 Toast.makeText(this, "日期不在本学期范围内，请先设置开学日期", Toast.LENGTH_LONG).show();
                 return;
@@ -4178,8 +4352,20 @@ public class MainActivity extends Activity {
             renderSchedule();
             fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
         });
-
         fillAdjustSheet(sheet, week, schedId, weekCourses, keys);
+
+        // 默认只展开「整天调课」；单节调课由入口按钮展开，减少一屏拥挤。
+        View singleSection = sheet.findViewById(R.id.adjSingleSection);
+        singleSection.setVisibility(View.GONE);
+        sheet.findViewById(R.id.adjOpenSingle).setOnClickListener(v -> {
+            boolean show = singleSection.getVisibility() != View.VISIBLE;
+            singleSection.setVisibility(show ? View.VISIBLE : View.GONE);
+            if (show) {
+                android.widget.ScrollView scroll = (android.widget.ScrollView)
+                        sheet.findViewById(R.id.adjSingleSection).getParent().getParent();
+                scroll.smoothScrollTo(0, singleSection.getTop());
+            }
+        });
 
         // 换一门课就把 ② 预填成它当前生效的位置，用户只需改要变的那一项
         courseSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -4271,6 +4457,16 @@ public class MainActivity extends Activity {
         });
 
         dialog.show();
+    }
+
+    /** 未设置开学日期时，用「本周周一」作虚拟第 1 周起点换算，保证整天调课可继续。 */
+    private int[] inferWeekDayWithoutTermStart(long ms) {
+        long base = mondayOf(System.currentTimeMillis());
+        long days = startOfDay(ms) - startOfDay(base);
+        int offset = (int) Math.floor(days / (7.0 * DAY_MS));
+        int week = offset + 1;
+        if (week < 1) week = 1;
+        return new int[]{week, weekdayOf(ms)};
     }
 
     /**
@@ -4718,7 +4914,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        // 同一个格子保留全部课程；渲染仍以第一门为主卡，其余通过冲突标记和详情展示。
+        // 同一个格子保留全部课程；用户在详情里选过哪门，就把那门渲染成主卡。
         for (CoursePlacement p : effectivePlacementsForWeek(week)) {
             int r = p.start - 1, col = p.day - 1;
             List<CoursePlacement> bucket = grid[r][col];
@@ -4788,7 +4984,7 @@ public class MainActivity extends Activity {
                 int c = d - 1;
                 if (covered[r][c]) continue;      // 已被上方 rowspan 占用
                 List<CoursePlacement> bucket = grid[r][c];
-                CoursePlacement placement = bucket == null || bucket.isEmpty() ? null : bucket.get(0);
+                CoursePlacement placement = pickConflictPlacement(bucket, r, c);
                 if (placement != null) {
                     JSONObject co = placement.course;
                     AdjustCache.Adjust adj = placement.adjust;
@@ -4875,6 +5071,20 @@ public class MainActivity extends Activity {
         sb.append("<p class=\"foot\">课表保存在手机本地，不会上传任何信息。</p>");
         sb.append("</body></html>");
         return sb.toString();
+    }
+
+    /** 冲突格子的主卡：优先用用户在详情里选过的课程，否则保留第一门。 */
+    private CoursePlacement pickConflictPlacement(
+            List<CoursePlacement> bucket, int row, int col) {
+        if (bucket == null || bucket.isEmpty()) return null;
+        CoursePlacement first = bucket.get(0);
+        if (bucket.size() == 1) return first;
+        String pref = conflictPrefs.get(row + "|" + col);
+        if (pref == null) return first;
+        for (CoursePlacement p : bucket) {
+            if (pref.equals(courseKey(p.course))) return p;
+        }
+        return first;
     }
 
     /** 调课清单里整天调休部分的条目（本周搬出的 + 搬入的） */
@@ -4979,10 +5189,37 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         try {
+            // 缓存视图和教务单时段查询保持一致：只显示命中的那组时段。
+            // 切换时段仍可用结果页顶部按钮，每次都从缓存中重新筛。
+            JSONObject singleDayView = new JSONObject(cachedDay.toString());
+            JSONArray allSlots = singleDayView.optJSONArray("slots");
+            JSONObject picked = null;
+            if (allSlots != null) {
+                for (int i = 0; i < allSlots.length(); i++) {
+                    JSONObject slot = allSlots.optJSONObject(i);
+                    if (slot == null) continue;
+                    JSONArray rooms = slot.optJSONObject("buildings") == null
+                            ? null : slot.optJSONObject("buildings").names();
+                    if (slot.optBoolean("ok", false)
+                            && (rooms != null && rooms.length() > 0)) {
+                        // 匹配不到明确时段时，退回「第一个可用时段」，避免页面为空。
+                        if (picked == null) picked = slot;
+                    }
+                }
+            }
+            if (slotIdx >= 0 && slotIdx < allSlots.length()) {
+                picked = allSlots.optJSONObject(slotIdx);
+            }
+            if (picked == null) {
+                Toast.makeText(this, "缓存中没有可用时段", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            JSONArray slots = new JSONArray().put(picked);
+            singleDayView.put("slots", slots);
             JSONObject view = new JSONObject();
             view.put("ok", true);
             view.put("single", true);
-            view.put("days", new JSONArray().put(cachedDay));
+            view.put("days", new JSONArray().put(singleDayView));
             view.put("fromCache", true);
             view.put("cacheAgeText", ResultCache.ageText(this));
             view.put("cacheExpired", ResultCache.isExpired(this));
@@ -4991,7 +5228,8 @@ public class MainActivity extends Activity {
             if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
             else applyIdleUi();
             showHtml(buildHtml(view));
-            statusText.setText(label + " · 已从本机缓存筛选");
+            statusText.setText(label + " · 来自本机缓存");
+            setEamsBrowserOverlay(false);
         } catch (Exception e) {
             Toast.makeText(this, "缓存结果读取失败，请重新查询", Toast.LENGTH_SHORT).show();
         }
@@ -5181,39 +5419,49 @@ public class MainActivity extends Activity {
                     WindowManager.LayoutParams.WRAP_CONTENT);
         }
 
-        JSONObject course = hit.course;
-        String name = course.optString("name", "课程");
-        String room = hit.adjust != null && !hit.adjust.room.isEmpty()
-                ? hit.adjust.room : course.optString("position", "");
-        ((TextView) sheet.findViewById(R.id.tvCourseTitle)).setText(name);
-        ((TextView) sheet.findViewById(R.id.tvCourseWeeks))
-                .setText(weeksText(course.optJSONArray("weeks")));
+        final CoursePlacement[] current = {hit};
+        TextView title = sheet.findViewById(R.id.tvCourseTitle);
+        TextView weeksView = sheet.findViewById(R.id.tvCourseWeeks);
+        TextView timeView = sheet.findViewById(R.id.tvCourseTime);
+        TextView teacherView = sheet.findViewById(R.id.tvCourseTeacher);
+        TextView roomView = sheet.findViewById(R.id.tvCourseRoom);
+        TextView adjustView = sheet.findViewById(R.id.tvCourseAdjust);
+        TextView freeButton = sheet.findViewById(R.id.btnCourseFree);
+        Runnable refreshUi = () -> {
+            CoursePlacement p = current[0];
+            JSONObject course = p.course;
+            String name = course.optString("name", "课程");
+            String room = p.adjust != null && !p.adjust.room.isEmpty()
+                    ? p.adjust.room : course.optString("position", "");
+            title.setText(name);
+            weeksView.setText(weeksText(course.optJSONArray("weeks")));
 
-        String t0 = slotTime(hit.start, false);
-        String t1 = slotTime(hit.end, true);
-        String time = "第 " + hit.start + (hit.end > hit.start ? "-" + hit.end : "")
-                + " 节";
-        if (!t0.isEmpty() && !t1.isEmpty()) time += "　" + t0 + "–" + t1;
-        ((TextView) sheet.findViewById(R.id.tvCourseTime)).setText(time);
-        ((TextView) sheet.findViewById(R.id.tvCourseTeacher))
-                .setText(nz(course.optString("teacher", "")));
-        ((TextView) sheet.findViewById(R.id.tvCourseRoom)).setText(nz(room));
+            String t0 = slotTime(p.start, false);
+            String t1 = slotTime(p.end, true);
+            String time = "第 " + p.start + (p.end > p.start ? "-" + p.end : "") + " 节";
+            if (!t0.isEmpty() && !t1.isEmpty()) time += "　" + t0 + "–" + t1;
+            timeView.setText(time);
+            teacherView.setText(nz(course.optString("teacher", "")));
+            roomView.setText(nz(room));
 
-        TextView adjustText = sheet.findViewById(R.id.tvCourseAdjust);
-        if (hit.adjust == null) {
-            adjustText.setVisibility(View.GONE);
-        } else if (AdjustCache.SCOPE_DAY.equals(hit.adjust.scope)) {
-            adjustText.setText("本地调休：原排在第 " + hit.adjust.week + " 周 周"
-                    + WD_CN[hit.adjust.srcDay - 1] + "，已整体调整到当前时间");
-            adjustText.setVisibility(View.VISIBLE);
-        } else if (hit.adjust.isCancelled()) {
-            adjustText.setText("这节课本周已停课");
-            adjustText.setVisibility(View.VISIBLE);
-        } else {
-            adjustText.setText("本地调课：原 周" + WD_CN[hit.adjust.srcDay - 1]
-                    + " " + hit.adjust.srcStart + "-" + hit.adjust.srcEnd + " 节");
-            adjustText.setVisibility(View.VISIBLE);
-        }
+            if (p.adjust == null) {
+                adjustView.setVisibility(View.GONE);
+            } else if (AdjustCache.SCOPE_DAY.equals(p.adjust.scope)) {
+                adjustView.setText("本地调休：原排在第 " + p.adjust.week + " 周 周"
+                        + WD_CN[p.adjust.srcDay - 1] + "，已整体调整到当前时间");
+                adjustView.setVisibility(View.VISIBLE);
+            } else if (p.adjust.isCancelled()) {
+                adjustView.setText("这节课本周已停课");
+                adjustView.setVisibility(View.VISIBLE);
+            } else {
+                adjustView.setText("本地调课：原 周" + WD_CN[p.adjust.srcDay - 1]
+                        + " " + p.adjust.srcStart + "-" + p.adjust.srcEnd + " 节");
+                adjustView.setVisibility(View.VISIBLE);
+            }
+
+            freeButton.setText("查询“" + name + "”此时段空教室");
+        };
+        refreshUi.run();
 
         View conflictBox = sheet.findViewById(R.id.llCourseConflicts);
         LinearLayout conflictList = sheet.findViewById(R.id.llConflictList);
@@ -5231,11 +5479,18 @@ public class MainActivity extends Activity {
                 rb.setTextColor(0xFF252A33);
                 rb.setPadding(0, pad, 0, pad);
                 rb.setButtonTintList(ColorStateList.valueOf(0xFF1B4D8F));
-                rb.setChecked(p == hit);
+                rb.setChecked(p == current[0]);
                 rb.setOnClickListener(v -> {
-                    if (p == hit) return;
-                    dialog.dismiss();
-                    showCourseDetail(p.day, p.start, p.end, courseKey(p.course));
+                    if (p == current[0]) return;
+                    current[0] = p;
+                    conflictPrefs.put(hit.day + "|" + (hit.start - 1),
+                            courseKey(p.course));
+                    refreshUi.run();
+                    renderSchedule();
+                    for (int j = 0; j < conflictList.getChildCount(); j++) {
+                        RadioButton item = (RadioButton) conflictList.getChildAt(j);
+                        item.setChecked(item == rb);
+                    }
                 });
                 conflictList.addView(rb, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -5243,16 +5498,20 @@ public class MainActivity extends Activity {
             }
         }
 
-        final int qDay = hit.day, qSt = hit.start, qEn = hit.end;
         sheet.findViewById(R.id.btnCourseFree).setOnClickListener(v -> {
             dialog.dismiss();
-            jumpToFreeRooms(qDay, qSt, qEn);
+            jumpToFreeRooms(current[0].day, current[0].start, current[0].end);
         });
         sheet.findViewById(R.id.btnCourseClose).setOnClickListener(v -> dialog.dismiss());
         sheet.findViewById(R.id.btnCourseCopy).setOnClickListener(v -> {
+            CoursePlacement p = current[0];
+            JSONObject course = p.course;
+            String name = course.optString("name", "课程");
+            String room = p.adjust != null && !p.adjust.room.isEmpty()
+                    ? p.adjust.room : course.optString("position", "");
             String text = name + "\n周次：" + weeksText(course.optJSONArray("weeks"))
-                    + "\n时间：周" + WD_CN[hit.day - 1]
-                    + " 第 " + hit.start + "-" + hit.end + " 节"
+                    + "\n时间：周" + WD_CN[p.day - 1]
+                    + " 第 " + p.start + "-" + p.end + " 节"
                     + "\n教师：" + nz(course.optString("teacher", ""))
                     + "\n地点：" + nz(room);
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -5263,21 +5522,135 @@ public class MainActivity extends Activity {
         });
         sheet.findViewById(R.id.btnCourseEdit).setOnClickListener(v -> {
             dialog.dismiss();
-            showEditCourseDialog(name, course);
+            CoursePlacement p = current[0];
+            showEditCourseDialog(p.course.optString("name", "课程"), p.course);
         });
-        CourseInfo deleteInfo = new CourseInfo(name);
-        JSONArray all = scheduleData == null ? null : scheduleData.optJSONArray("courses");
-        if (all != null) {
-            for (int i = 0; i < all.length(); i++) {
-                JSONObject c = all.optJSONObject(i);
-                if (c != null && name.equals(c.optString("name", ""))) deleteInfo.count++;
-            }
-        }
         sheet.findViewById(R.id.btnCourseDelete).setOnClickListener(v -> {
             dialog.dismiss();
-            confirmDeleteCourse(deleteInfo);
+            showDeleteScopeSheet(current[0]);
         });
         dialog.show();
+    }
+
+    /**
+     * 课程删除范围选择：仅当前周、同位置全部周次、整门课程。
+     * 调课记录会按对应范围清理，避免留下孤儿记录。
+     */
+    private void showDeleteScopeSheet(final CoursePlacement placement) {
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_delete_scope, null);
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(sheet);
+        dialog.setCanceledOnTouchOutside(true);
+
+        Window win = dialog.getWindow();
+        if (win != null) {
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            win.setGravity(Gravity.BOTTOM);
+            win.setWindowAnimations(R.style.BottomSheetAnimation);
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+
+        String courseName = placement.course.optString("name", "课程");
+        final CourseInfo allInfo = new CourseInfo(courseName);
+        JSONArray courses = scheduleData == null ? null : scheduleData.optJSONArray("courses");
+        if (courses != null) {
+            for (int i = 0; i < courses.length(); i++) {
+                JSONObject c = courses.optJSONObject(i);
+                if (c != null && courseName.equals(c.optString("name", ""))) allInfo.count++;
+            }
+        }
+
+        sheet.findViewById(R.id.optionOneWeek).setOnClickListener(v -> {
+            dialog.dismiss();
+            deleteCurrentWeekInstance(placement);
+        });
+        sheet.findViewById(R.id.optionSameSlot).setOnClickListener(v -> {
+            dialog.dismiss();
+            deleteSameSlotAcrossWeeks(placement);
+        });
+        sheet.findViewById(R.id.optionAllCourse).setOnClickListener(v -> {
+            dialog.dismiss();
+            confirmDeleteCourse(allInfo);
+        });
+        sheet.findViewById(R.id.optionCancel).setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+    }
+
+    /**
+     * 仅删除当前周显示的这节课。做法不是直接删排课记录，而是从该记录的
+     * 周次列表里移掉当前周；这样其他周不受影响。
+     */
+    private void deleteCurrentWeekInstance(final CoursePlacement placement) {
+        JSONObject target = placement.course;
+        try {
+            JSONArray weeks = target.optJSONArray("weeks");
+            if (weeks == null) {
+                weeks = new JSONArray();
+                for (int w = 1; w <= maxWeekOfView(); w++) weeks.put(w);
+                target.put("weeks", weeks);
+            }
+            int currentViewWeek = currentWeek();
+            for (int i = weeks.length() - 1; i >= 0; i--) {
+                if (weeks.optInt(i, -1) == currentViewWeek) weeks.remove(i);
+            }
+            if (weeks.length() == 0 && scheduleData != null) {
+                JSONArray cs = scheduleData.optJSONArray("courses");
+                if (cs != null) {
+                    for (int i = 0; i < cs.length(); i++) {
+                        if (cs.optJSONObject(i) == target) {
+                            cs.remove(i);
+                            break;
+                        }
+                    }
+                }
+            }
+            persistSchedule();
+            refreshCourseManager();
+            renderSchedule();
+            Toast.makeText(this, "已删除当前周这一节课", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "删除失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 删除同星期同起止节同教师同地点、覆盖当前周的所有排课记录。
+     * 这和参考软件的“全部周五同老师同地点”一致。
+     */
+    private void deleteSameSlotAcrossWeeks(final CoursePlacement placement) {
+        try {
+            JSONArray cs = scheduleData.optJSONArray("courses");
+            if (cs == null) return;
+            String name = placement.course.optString("name", "");
+            String teacher = nz(placement.course.optString("teacher", ""));
+            String room = placement.adjust != null && !placement.adjust.room.isEmpty()
+                    ? placement.adjust.room : nz(placement.course.optString("position", ""));
+            int day = placement.day, st = placement.start, en = placement.end;
+
+            for (int i = cs.length() - 1; i >= 0; i--) {
+                JSONObject c = cs.optJSONObject(i);
+                if (c == null || !name.equals(c.optString("name", ""))) continue;
+                int cDay = c.optInt("day", 0);
+                int cSt = c.optInt("startSection", 0);
+                int cEn = Math.max(cSt, c.optInt("endSection", cSt));
+                String cTeacher = nz(c.optString("teacher", ""));
+                String cRoom = nz(c.optString("position", ""));
+                if (cDay != day || cSt != st || cEn != en) continue;
+                if (!teacher.equals(cTeacher) || !room.equals(cRoom)) continue;
+                int currentViewWeek = currentWeek();
+                if (!inWeek(c.optJSONArray("weeks"), currentViewWeek)) continue;
+                cs.remove(i);
+                AdjustCache.removeCourse(this, ScheduleCache.currentId(this), courseKey(c));
+            }
+            persistSchedule();
+            refreshCourseManager();
+            renderSchedule();
+            Toast.makeText(this, "已删除同位置的全部周次课程", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "删除失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private static String nz(String s) {

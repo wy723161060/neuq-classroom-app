@@ -130,6 +130,44 @@
             android:layout_marginTop="9dp"
             android:orientation="horizontal" />
 
+        <Button
+            android:id="@+id/btnThemePickImage"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/btn_outline_blue"
+            android:text="选择自定义背景图"
+            android:textAllCaps="false"
+            android:textColor="#1B4D8F"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/themeImageState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="未设置背景图"
+            android:textColor="#98A2B3"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/themeImageAlphaLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="背景图透明度 45%"
+            android:textColor="#667085"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <SeekBar
+            android:id="@+id/themeImageAlpha"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:max="100"
+            android:progress="45" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

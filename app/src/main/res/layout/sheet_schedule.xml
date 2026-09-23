@@ -172,6 +172,21 @@
                 android:layout_marginTop="8dp"
                 android:orientation="vertical" />
 
+            <TextView
+                android:id="@+id/schedAddCourse"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/cache_card_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground"
+                android:gravity="center"
+                android:text="＋ 添加课程"
+                android:textColor="@color/brand_blue_bright"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
             <!--
               四宫格入口（仿照参考截图的样式）：课表相关的次级功能收在这里，
               面板本体只留最高频的「调周次 / 切课表 / 调课 / 添加」。
@@ -216,84 +231,24 @@
                     android:text="常见问题" />
             </LinearLayout>
 
-            <!--
-              两个动作并排：
-                调课     —— 老师临时挪课 / 换教室 / 本周停课，做本地调整（描边款）
-                添加课表 —— 新建一张空白课表（实心蓝，本面板唯一的主行动）
-            -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:orientation="horizontal">
+                android:orientation="horizontal" />
 
-                <LinearLayout
-                    android:id="@+id/schedAdjust"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@drawable/btn_outline_blue"
-                    android:baselineAligned="false"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:orientation="horizontal"
-                    android:paddingTop="12dp"
-                    android:paddingBottom="12dp">
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:contentDescription="调课"
-                        android:scaleType="centerInside"
-                        android:src="@drawable/ic_skeu_swap"
-                        android:tint="#1B4D8F" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="7dp"
-                        android:includeFontPadding="false"
-                        android:text="调课"
-                        android:textColor="#1B4D8F"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/schedAdd"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/cache_btn_primary"
-                    android:baselineAligned="false"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:orientation="horizontal"
-                    android:paddingTop="12dp"
-                    android:paddingBottom="12dp">
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:contentDescription="添加课表"
-                        android:scaleType="centerInside"
-                        android:src="@drawable/ic_skeu_add"
-                        android:tint="#FFFFFF" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="7dp"
-                        android:includeFontPadding="false"
-                        android:text="添加课表"
-                        android:textColor="#FFFFFF"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
+            <TextView
+                android:id="@+id/schedAdjust"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/btn_outline_blue"
+                android:gravity="center"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:text="调课"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#1B4D8F" />
 
             <TextView
                 android:layout_width="match_parent"
