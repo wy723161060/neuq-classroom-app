@@ -156,8 +156,11 @@ public class MainActivity extends Activity {
     private LinearLayout tabSchedule;
     private LinearLayout tabMore;
     private ImageView iconClassroom;
+    private View indClassroom;
     private ImageView iconSchedule;
+    private View indSchedule;
     private ImageView iconMore;
+    private View indMore;
     private TextView tvClassroom;
     private TextView tvSchedule;
     private TextView tvMore;
@@ -442,8 +445,11 @@ public class MainActivity extends Activity {
         tabSchedule = findViewById(R.id.tabSchedule);
         tabMore = findViewById(R.id.tabMore);
         iconClassroom = findViewById(R.id.iconClassroom);
+        indClassroom = findViewById(R.id.indClassroom);
         iconSchedule = findViewById(R.id.iconSchedule);
+        indSchedule = findViewById(R.id.indSchedule);
         iconMore = findViewById(R.id.iconMore);
+        indMore = findViewById(R.id.indMore);
         tvClassroom = findViewById(R.id.tvClassroom);
         tvSchedule = findViewById(R.id.tvSchedule);
         tvMore = findViewById(R.id.tvMore);
@@ -2025,9 +2031,10 @@ public class MainActivity extends Activity {
         int surface = ThemeStore.surface(this);
 
         View root = findViewById(R.id.mainRoot);
+        View bottomNav = findViewById(R.id.bottomNav);
         if (root != null) root.setBackground(new AuroraDrawable(background, accent));
-        // 顶栏透明、底栏是玻璃 Dock —— 这里不能再 setBackgroundColor，
-        // 否则会把 XML / drawable 里配好的玻璃材质整个盖掉。
+        if (bottomNav != null) bottomNav.setBackgroundColor(background);
+        // 顶栏保持透明：页面渐变要延伸到顶栏底下。
 
         boolean hasImage = ThemeStore.hasImage(this);
         if (themeBackgroundImage != null) {
@@ -2600,20 +2607,28 @@ public class MainActivity extends Activity {
 
     /** 底部 Tab 高亮：三个 Tab 共用一处，避免以后加 Tab 漏改 */
     private void applyTabHighlight(int tab) {
-        applyTabItem(tabClassroom, iconClassroom, tvClassroom, tab == TAB_CLASSROOM);
-        applyTabItem(tabSchedule, iconSchedule, tvSchedule, tab == TAB_SCHEDULE);
-        applyTabItem(tabMore, iconMore, tvMore, tab == TAB_MORE);
+        applyTabItem(iconClassroom, indClassroom, tvClassroom, tab == TAB_CLASSROOM);
+        applyTabItem(iconSchedule, indSchedule, tvSchedule, tab == TAB_SCHEDULE);
+        applyTabItem(iconMore, indMore, tvMore, tab == TAB_MORE);
     }
 
-    /** 底部 Tab：激活项背后一块玻璃亮斑（对齐酷安风格的液态玻璃 Dock） */
-    private void applyTabItem(LinearLayout cell, ImageView icon, TextView label, boolean active) {
+    private void applyTabItem(ImageView icon, View indicator, TextView label, boolean active) {
         int color = active ? ThemeStore.accent(this) : TAB_OFF;
         icon.setColorFilter(color);
         label.setTextColor(color);
         label.setTypeface(null, active
                 ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
-        cell.setBackgroundResource(active
-                ? R.drawable.nav_blob_active : R.drawable.nav_blob_inactive);
+        indicator.animate().cancel();
+        if (active) {
+            indicator.setVisibility(View.VISIBLE);
+            indicator.setAlpha(0f);
+            indicator.setScaleX(0.65f);
+            indicator.animate().alpha(1f).scaleX(1f).setDuration(180).start();
+        } else {
+            indicator.setVisibility(View.INVISIBLE);
+            indicator.setAlpha(0f);
+            indicator.setScaleX(0.65f);
+        }
     }
 
     private void switchTab(int tab) {

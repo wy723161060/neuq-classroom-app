@@ -402,14 +402,9 @@
     <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="62dp"
-        android:layout_marginStart="10dp"
-        android:layout_marginEnd="10dp"
-        android:layout_marginBottom="6dp"
+        android:layout_height="64dp"
         android:orientation="horizontal"
-        android:background="@drawable/glass_dock"
-        android:elevation="3dp"
-        android:outlineProvider="background"
+        android:background="@color/app_background"
         android:paddingTop="5dp"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
@@ -441,6 +436,13 @@
                 android:textSize="11.5sp"
                 android:textStyle="bold"
                 android:textColor="@color/brand_blue_bright" />
+
+            <View
+                android:id="@+id/indSchedule"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator" />
         </LinearLayout>
 
         <LinearLayout
@@ -468,6 +470,14 @@
                 android:text="空教室"
                 android:textSize="11.5sp"
                 android:textColor="@color/text_muted" />
+
+            <View
+                android:id="@+id/indClassroom"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator"
+                android:visibility="invisible" />
         </LinearLayout>
 
         <!--
@@ -500,6 +510,14 @@
                 android:text="更多"
                 android:textSize="11.5sp"
                 android:textColor="@color/text_muted" />
+
+            <View
+                android:id="@+id/indMore"
+                android:layout_width="18dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/nav_indicator"
+                android:visibility="invisible" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>
