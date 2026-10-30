@@ -137,7 +137,11 @@ final class ScheduleNativeView extends LinearLayout {
         LinearLayout gridCard = new LinearLayout(getContext());
         gridCard.setOrientation(VERTICAL);
         // 玻璃而不是纯白：底色（极光背景）要能透上来，否则「液态玻璃」只剩投影
-        gridCard.setBackground(GlassStyle.panel(getContext(), 16f, 0xFFFFFFFF, 0xB8));
+        GradientDrawable gridBg = new GradientDrawable();
+        gridBg.setColor(0xFFFFFFFF);
+        gridBg.setCornerRadius(dp(16));
+        gridBg.setStroke(dp(1), 0xFFE7ECF3);
+        gridCard.setBackground(gridBg);
         gridCard.setElevation(dp(2));
         gridCard.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
         gridCard.setClipToOutline(true);
@@ -170,7 +174,7 @@ final class ScheduleNativeView extends LinearLayout {
         box.setLineSpacing(dp(4), 1f);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(16), dp(20), dp(16), dp(20));
-        box.setBackground(GlassStyle.panel(getContext(), 16f, 0xFFFFFFFF, 0xB8));
+        box.setBackground(round(0xFFF7F9FC, dp(12), 0, 0));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.topMargin = dp(14);
         addView(box, lp);
@@ -236,7 +240,11 @@ final class ScheduleNativeView extends LinearLayout {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(10), dp(9), dp(10), dp(9));
 
-        bar.setBackground(GlassStyle.panel(getContext(), 14f, 0xFFFFFFFF, 0xB8));
+        GradientDrawable barBg = new GradientDrawable();
+        barBg.setColor(0xFFFFFFFF);
+        barBg.setCornerRadius(dp(14));
+        barBg.setStroke(dp(1), 0xFFE7ECF3);
+        bar.setBackground(barBg);
         bar.setElevation(dp(2));
         bar.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
         bar.setClipToOutline(true);
@@ -289,7 +297,7 @@ final class ScheduleNativeView extends LinearLayout {
         tv.setTextColor(accent ? 0xFF2F6FED : 0xFF44506B);
 
         GradientDrawable g = new GradientDrawable();
-        g.setColor(0xB3FFFFFF);
+        g.setColor(0xFFFFFFFF);
         g.setCornerRadius(dp(10));
         g.setStroke(dp(1), accent ? 0xFF2F6FED : 0xFFDFE3EA);
         tv.setBackground(g);
@@ -303,7 +311,7 @@ final class ScheduleNativeView extends LinearLayout {
         row.setOrientation(HORIZONTAL);
 
         View corner = new View(getContext());
-        corner.setBackgroundColor(0x8CF7F8FB);
+        corner.setBackgroundColor(0xFFF7F8FB);
         row.addView(corner, new LinearLayout.LayoutParams(periodColW, headerH));
 
         int accentDark = darken(d.accentColor, 0.76f);
@@ -313,7 +321,7 @@ final class ScheduleNativeView extends LinearLayout {
             LinearLayout cell = new LinearLayout(getContext());
             cell.setOrientation(VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            cell.setBackgroundColor(0x8CF8FAFD);
+            cell.setBackgroundColor(0xFFF8FAFD);
             cell.setPadding(dp(6), dp(4), dp(6), dp(4));
 
             // 「今天」在 CSS 里是内缩的渐变胶囊，不是整格填色
@@ -383,7 +391,7 @@ final class ScheduleNativeView extends LinearLayout {
             LinearLayout cell = new LinearLayout(getContext());
             cell.setOrientation(VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            cell.setBackground(rect(0x99FAFBFD, LINE));
+            cell.setBackground(rect(0xFFFAFBFD, LINE));
 
             TextView no = new TextView(getContext());
             no.setText(String.valueOf(r + 1));
@@ -475,8 +483,7 @@ final class ScheduleNativeView extends LinearLayout {
         box.setPadding(dp(3), dp(4), dp(3), dp(4));
 
         // 对齐 .course：9px 圆角、铺满格子、文字居中
-        Drawable base = GlassStyle.panel(getContext(), 9f,
-                COURSE_COLORS[colorIdx(name)], 0xF2);
+        Drawable base = round(COURSE_COLORS[colorIdx(name)], dp(9), 0, 0);
         if (p.adjust != null) {
             // 调过课的卡片加一圈 2px 橙边（CSS: inset 0 0 0 2px #FFB020）
             GradientDrawable ring = new GradientDrawable();
@@ -552,7 +559,7 @@ final class ScheduleNativeView extends LinearLayout {
         LinearLayout cell = new LinearLayout(getContext());
         cell.setOrientation(VERTICAL);
         cell.setGravity(Gravity.CENTER);
-        cell.setBackgroundColor(0x59FCFCFD);
+        cell.setBackgroundColor(0xFFFCFCFD);
         cell.setPadding(dp(2), dp(2), dp(2), dp(2));
 
         LinearLayout box = new LinearLayout(getContext());
@@ -597,7 +604,7 @@ final class ScheduleNativeView extends LinearLayout {
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(VERTICAL);
         box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setBackground(GlassStyle.panel(getContext(), 16f, 0xFFFFF7EC, 0xE0));
+        box.setBackground(round(0xFFFFF7EC, dp(10), dp(1), 0xFFF3DDBB));
 
         TextView head = new TextView(getContext());
         head.setText("本周调课 · " + count + " 条");

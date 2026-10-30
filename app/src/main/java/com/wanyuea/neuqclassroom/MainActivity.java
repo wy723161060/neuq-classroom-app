@@ -108,6 +108,7 @@ public class MainActivity extends Activity {
     private float swipeDownX;
     private float swipeDownY;
     private boolean swipeHandled;
+    private View bottomNavView;
 
     private WebView loginView;
     /** 课表 / 空教室都渲染成原生视图，这个 ScrollView 是它们的共同容器 */
@@ -438,6 +439,7 @@ public class MainActivity extends Activity {
         setupEamsBrowserOverlay();
         statusText = findViewById(R.id.statusText);
         progressBar = findViewById(R.id.progressBar);
+        bottomNavView = findViewById(R.id.bottomNav);
         btnRefreshData = findViewById(R.id.btnRefreshData);
         btnImportTop = findViewById(R.id.btnImportTop);
         btnMoreTop = findViewById(R.id.btnMoreTop);
@@ -603,6 +605,15 @@ public class MainActivity extends Activity {
      *   3. 横向明显大于纵向（1.3 倍），避免上下滚动时误触发。
      * 一次手势最多切一周，切换动作 post 到下一帧，不在事件分发中途重建视图。
      */
+    /** 起点是否落在底部导航区域内 */
+    private boolean isTouchOnBottomNav(float rawX, float rawY) {
+        if (bottomNavView == null || bottomNavView.getVisibility() != View.VISIBLE) return false;
+        int[] loc = new int[2];
+        bottomNavView.getLocationOnScreen(loc);
+        return rawY >= loc[1] && rawY <= loc[1] + bottomNavView.getHeight()
+                && rawX >= loc[0] && rawX <= loc[0] + bottomNavView.getWidth();
+    }
+
     private void trackHorizontalSwipe(MotionEvent ev) {
         if (resultScroll == null || scheduleView == null || roomView == null) return;
         boolean scheduleMode = resultScroll.getVisibility() == View.VISIBLE
@@ -621,7 +632,8 @@ public class MainActivity extends Activity {
             case MotionEvent.ACTION_DOWN:
                 swipeDownX = ev.getX();
                 swipeDownY = ev.getY();
-                swipeHandled = false;
+                // 起点落在底部导航上：这次滑动只属于 Tab 栏，不参与换页/换周
+                swipeHandled = isTouchOnBottomNav(ev.getRawX(), ev.getRawY());
                 break;
             case MotionEvent.ACTION_POINTER_DOWN:
                 // 双指以上（缩放/多指拖动）不参与切周
@@ -2031,10 +2043,11 @@ public class MainActivity extends Activity {
         int surface = ThemeStore.surface(this);
 
         View root = findViewById(R.id.mainRoot);
+        View topBar = findViewById(R.id.topBar);
         View bottomNav = findViewById(R.id.bottomNav);
-        if (root != null) root.setBackground(new AuroraDrawable(background, accent));
+        if (root != null) root.setBackgroundColor(background);
+        if (topBar != null) topBar.setBackgroundColor(background);
         if (bottomNav != null) bottomNav.setBackgroundColor(background);
-        // 顶栏保持透明：页面渐变要延伸到顶栏底下。
 
         boolean hasImage = ThemeStore.hasImage(this);
         if (themeBackgroundImage != null) {
@@ -2054,7 +2067,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        getWindow().setStatusBarColor(blendColor(background, 0xFFFFFFFF, 0.62f));
+        getWindow().setStatusBarColor(background);
         getWindow().setNavigationBarColor(surface);
 
         btnRefreshData.setImageTintList(ColorStateList.valueOf(accent));
@@ -2107,10 +2120,7 @@ public class MainActivity extends Activity {
             boolean marked = Boolean.TRUE.equals(view.getTag(R.id.theme_surface_tag));
             if (marked || isThemeSurfaceColor(current)) {
                 android.graphics.drawable.Drawable changed = shape.mutate();
-                // 保留原透明度：卡片是半透明玻璃，直接 setColor(surface) 会把它刷成不透明
-                int alpha = android.graphics.Color.alpha(current);
-                ((GradientDrawable) changed).setColor(
-                        (surface & 0x00FFFFFF) | (alpha << 24));
+                ((GradientDrawable) changed).setColor(surface);
                 view.setBackground(changed);
                 view.setTag(R.id.theme_surface_tag, true);
             }
@@ -2139,8 +2149,7 @@ public class MainActivity extends Activity {
     }
 
     private static boolean isThemeSurfaceColor(int color) {
-        // 只比 RGB，不看 alpha：玻璃卡片是半透明的（alpha 不到 240），
-        // 按 alpha 卡会把它们排除掉，用户改「卡片色」就不生效了。
+        if (android.graphics.Color.alpha(color) < 240) return false;
         return android.graphics.Color.red(color) >= 242
                 && android.graphics.Color.green(color) >= 242
                 && android.graphics.Color.blue(color) >= 242;

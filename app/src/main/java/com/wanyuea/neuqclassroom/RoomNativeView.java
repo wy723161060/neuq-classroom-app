@@ -157,7 +157,11 @@ final class RoomNativeView extends LinearLayout {
         card.setOrientation(VERTICAL);
         card.setPadding(dp(6), dp(8), dp(6), dp(8));
 
-        card.setBackground(GlassStyle.panel(getContext(), 14f, 0xFFFFFFFF, 0xB8));
+        GradientDrawable barBg = new GradientDrawable();
+        barBg.setColor(0xFFFFFFFF);
+        barBg.setCornerRadius(dp(14));
+        barBg.setStroke(dp(1), 0xFFE7ECF3);
+        card.setBackground(barBg);
 
         LinearLayout row = new LinearLayout(getContext());
         row.setOrientation(HORIZONTAL);
@@ -244,7 +248,7 @@ final class RoomNativeView extends LinearLayout {
         box.setLineSpacing(dp(4), 1f);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(16), dp(20), dp(16), dp(20));
-        box.setBackground(GlassStyle.panel(getContext(), 16f, 0xFFFFFFFF, 0xB8));
+        box.setBackground(round(0xFFF7F9FC, dp(12), 0, 0));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.topMargin = dp(14);
         addView(box, lp);
@@ -293,12 +297,16 @@ final class RoomNativeView extends LinearLayout {
         // 与上方卡片同宽：之前左右各缩 10dp，两张卡对不齐很突兀
         box.setLayoutParams(matchWrap());
 
-        box.setBackground(GlassStyle.panel(getContext(), 14f, 0xFFFFFFFF, 0xB8));
+        GradientDrawable tabBg = new GradientDrawable();
+        tabBg.setColor(0xFFFFFFFF);
+        tabBg.setCornerRadius(dp(14));
+        tabBg.setStroke(dp(1), 0xFFE7ECF3);
+        box.setBackground(tabBg);
         box.setClipToOutline(true);
 
         LinearLayout bar = new LinearLayout(getContext());
         bar.setOrientation(HORIZONTAL);
-        bar.setBackgroundColor(0x99EEF3FB);
+        bar.setBackgroundColor(0xFFEEF3FB);
 
         final List<View> contents = new ArrayList<>();
         final List<LinearLayout> cells = new ArrayList<>();
@@ -309,7 +317,7 @@ final class RoomNativeView extends LinearLayout {
 
             final LinearLayout cell = new LinearLayout(getContext());
             cell.setOrientation(VERTICAL);
-            cell.setBackgroundColor(i == 0 ? 0xCCFFFFFF : 0x00FFFFFF);
+            cell.setBackgroundColor(i == 0 ? 0xFFFFFFFF : 0x00FFFFFF);
 
             final TextView label = new TextView(getContext());
             label.setText(tab.name);
@@ -342,7 +350,7 @@ final class RoomNativeView extends LinearLayout {
                 for (int k = 0; k < contents.size(); k++) {
                     boolean active = contents.get(k) == content;
                     contents.get(k).setVisibility(active ? VISIBLE : GONE);
-                    cells.get(k).setBackgroundColor(active ? 0xCCFFFFFF : 0x00FFFFFF);
+                    cells.get(k).setBackgroundColor(active ? 0xFFFFFFFF : 0x00FFFFFF);
                     labels.get(k).setTextColor(active ? 0xFF1B4D8F : 0xFF667085);
                     cells.get(k).getChildAt(1).setVisibility(
                             active ? VISIBLE : INVISIBLE);
@@ -371,7 +379,7 @@ final class RoomNativeView extends LinearLayout {
         tv.setTextColor(active ? Color.WHITE : 0xFF55617A);
         tv.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
         if (active) {
-            GlassStyle.pill(tv, 0xFF2F6FED, 0xFF);
+            tv.setBackground(round(0xFF1B4D8F, dp(8), 0, 0));
         } else {
             tv.setBackground(null);
             GradientDrawable g = new GradientDrawable();
@@ -393,7 +401,7 @@ final class RoomNativeView extends LinearLayout {
         table.setOrientation(VERTICAL);
         // 对齐 table.css：普通表格网格，直角、1px #EDF0F5 外框，不用圆角卡片
         GradientDrawable tableBg = new GradientDrawable();
-        tableBg.setColor(0x00FFFFFF);   // 只画边框，填充交给外层玻璃卡
+        tableBg.setColor(0xFFFFFFFF);
         tableBg.setStroke(dp(1), TABLE_LINE);
         table.setBackground(tableBg);
         for (int i = 0; i < slot.rows.size(); i++) {
@@ -464,7 +472,7 @@ final class RoomNativeView extends LinearLayout {
         label.setTypeface(Typeface.DEFAULT_BOLD);
         label.setTextColor(0xFF171A21);
         label.setGravity(Gravity.CENTER);
-        label.setBackgroundColor(0x99FAFBFD);
+        label.setBackgroundColor(0xFFFAFBFD);
         line.addView(label, new LinearLayout.LayoutParams(dp(44), LayoutParams.MATCH_PARENT));
 
         View divider = new View(getContext());
@@ -559,16 +567,16 @@ final class RoomNativeView extends LinearLayout {
         TextView tv = new TextView(getContext());
         if (t.cacheExpired) {
             tv.setText("数据已过期（" + t.cacheAgeText + "），请刷新");
-            tv.setBackground(GlassStyle.panel(getContext(), 12f, 0xFFFFEBEE, 0xE6));
+            tv.setBackground(round(0xFFFFEBEE, dp(8), dp(1), 0xFFF3C6CB));
             tv.setTextColor(0xFFC62828);
         } else if (t.staleDay) {
             tv.setText("这是 " + t.cacheFirstDate + " 的数据，不是今天的 · "
                     + t.cacheAgeText + "抓取");
-            tv.setBackground(GlassStyle.panel(getContext(), 12f, 0xFFFFF7EC, 0xE6));
+            tv.setBackground(round(0xFFFFF7EC, dp(8), dp(1), 0xFFF3DDBB));
             tv.setTextColor(0xFF8A5A00);
         } else {
             tv.setText("离线数据 · 上次抓取于 " + t.cacheAgeText);
-            tv.setBackground(GlassStyle.panel(getContext(), 12f, 0xFFFFFFFF, 0x8C));
+            tv.setBackground(round(0xFFF2F4F9, dp(8), 0, 0));
             tv.setTextColor(0xFF55617A);
         }
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
@@ -587,7 +595,11 @@ final class RoomNativeView extends LinearLayout {
         box.setOrientation(VERTICAL);
         box.setPadding(dp(12), dp(8), dp(12), dp(8));
 
-        box.setBackground(GlassStyle.panel(getContext(), 14f, 0xFFFFFFFF, 0xB8));
+        GradientDrawable legendBg = new GradientDrawable();
+        legendBg.setColor(0xFFFFFFFF);
+        legendBg.setCornerRadius(dp(14));
+        legendBg.setStroke(dp(1), 0xFFE7ECF3);
+        box.setBackground(legendBg);
 
         LinearLayout.LayoutParams lp = matchWrap();
         lp.topMargin = dp(8);
@@ -624,7 +636,7 @@ final class RoomNativeView extends LinearLayout {
         tv.setTextColor(0xFF8A5A00);
         tv.setLineSpacing(dp(2), 1f);
         tv.setPadding(dp(10), dp(7), dp(10), dp(7));
-        tv.setBackground(GlassStyle.panel(getContext(), 12f, 0xFFFFF7EC, 0xE6));
+        tv.setBackground(round(0xFFFFF7EC, dp(8), dp(1), 0xFFF3DDBB));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.topMargin = dp(6);
         tv.setLayoutParams(lp);

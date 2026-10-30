@@ -1,32 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  底部抽屉的底：玻璃 + 上方两角圆角。
+  底部抽屉的底：白色 + 上方两角圆角。
 
   抽屉用系统 Dialog 实现（本项目零第三方依赖），窗口底色被设成全透明，
-  所以「一块半透明的圆角玻璃从底部升起来」这件事得由这张 drawable 自己完成。
-  上方两角 24dp；下面两角不圆，因为要贴住屏幕底边。
+  所以「一张白色圆角纸从底部升起来」这件事得由这张 drawable 自己完成。
+  上方两角 20dp 是参考用户给的课表截图；下面两角不圆，因为要贴住屏幕底边。
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/glass_fill" />
-            <corners
-                android:topLeftRadius="24dp"
-                android:topRightRadius="24dp" />
-            <stroke
-                android:width="1dp"
-                android:color="@color/glass_border" />
-        </shape>
-    </item>
-    <item>
-        <shape android:shape="rectangle">
-            <corners
-                android:topLeftRadius="24dp"
-                android:topRightRadius="24dp" />
-            <gradient
-                android:angle="270"
-                android:startColor="@color/glass_highlight"
-                android:endColor="#00FFFFFF" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners
+        android:topLeftRadius="20dp"
+        android:topRightRadius="20dp" />
+</shape>

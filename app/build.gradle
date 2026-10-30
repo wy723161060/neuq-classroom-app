@@ -10,8 +10,8 @@ android {
         applicationId "com.wanyuea.neuqclassroom"
         minSdk 26
         targetSdk 34
-        versionCode 125
-        versionName "1.4.1"
+        versionCode 126
+        versionName "1.4.2"
     }
 
     signingConfigs {
