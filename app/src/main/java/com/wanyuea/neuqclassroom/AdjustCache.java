@@ -11,9 +11,7 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 调课记录（本地调整）。
@@ -195,24 +193,26 @@ final class AdjustCache {
     }
 
     /**
-     * 第 week 周实际生效的调课，按课程键去重。
+     * 第 week 周实际生效的调课记录，按课程键去重。
      *
-     * 同一门课既有「每周」又有「本周」记录时，本周的优先 ——
-     * 用户先设了每周调课，又单独改了这一周，预期显然是后者生效。
-     * 整天调课（scope=day）不参与：它作用于「一整天」，由渲染端单独取。
+     * 规则本体在 {@link PlacementResolver#effectiveAdjustments}：同一门课既有
+     * 「每周」又有「本周」记录时本周优先；整天调课不参与（它作用于「一整天」，
+     * 由渲染端单独取）。放在那边是为了让排课结果和这份列表共用同一套去重逻辑，
+     * 不会出现「网格按 A 算、清单按 B 算」。
      */
     static List<Adjust> forWeek(Context ctx, String schedId, int week) {
         List<Adjust> all = list(ctx, schedId);
-        Map<String, Adjust> eff = new LinkedHashMap<>();
-        for (Adjust a : all) {
-            if (SCOPE_DAY.equals(a.scope)) continue;
-            if (a.appliesTo(week) && SCOPE_ALL.equals(a.scope)) eff.put(a.courseKey, a);
+        List<PlacementResolver.Adjustment> view = new ArrayList<>(all.size());
+        for (int i = 0; i < all.size(); i++) {
+            Adjust a = all.get(i);
+            view.add(new PlacementResolver.Adjustment(i, a.courseKey, a.scope, a.week,
+                    a.day, a.startSection, a.endSection, a.targetWeek, a.srcDay));
         }
-        for (Adjust a : all) {
-            if (SCOPE_DAY.equals(a.scope)) continue;
-            if (a.appliesTo(week) && !SCOPE_ALL.equals(a.scope)) eff.put(a.courseKey, a);
+        List<Adjust> out = new ArrayList<>();
+        for (PlacementResolver.Adjustment a : PlacementResolver.effectiveAdjustments(view, week)) {
+            out.add(all.get(a.seq));
         }
-        return new ArrayList<>(eff.values());
+        return out;
     }
 
     /** 整天调课（节假日调休）记录 */

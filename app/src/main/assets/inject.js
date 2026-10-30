@@ -11,14 +11,17 @@
  *   名称清洗（去掉楼栋前缀）。
  */
 (function () {
+  /* 时段顺序即界面上的顺序。
+     「昼间1-8节」是教务为了显示混进来的合并统计项（跨度 8 节），
+     放到最后，免得它把 1-2 → 11-12 的自然顺序从中间截断。 */
   var SLOTS = [
     ["1", "2", "上午1-2节"],
     ["3", "4", "上午3-4节"],
     ["5", "6", "下午5-6节"],
     ["7", "8", "下午7-8节"],
-    ["1", "8", "昼间1-8节"],
     ["9", "10", "晚上9-10节"],
-    ["11", "12", "晚上11-12节"]
+    ["11", "12", "晚上11-12节"],
+    ["1", "8", "昼间1-8节"]
   ];
   var DEF_ENC = "77726476706e69737468656265737421fae05988693e6d456f468ca88d1b203b";
 
@@ -114,6 +117,36 @@
     return /^\d+[A-Za-z]?(-[A-Za-z0-9-]+)?$/.test(cleaned);
   }
 
+  /* 教室列的文本提取。
+     教务页面会把多间教室塞进同一个单元格（<br> 分隔或并列元素），
+     textContent 会把它们连成 31103210 —— 必须按元素边界补空格。 */
+  function cellText(el) {
+    var out = "";
+    el.childNodes.forEach(function (n) {
+      if (n.nodeType === 3) { out += n.nodeValue; return; }
+      if (n.nodeType !== 1) return;
+      if (n.tagName === "BR") { out += " "; return; }
+      var inner = cellText(n);
+      if (inner) {
+        if (out && !/\s$/.test(out)) out += " ";
+        out += inner;
+      }
+    });
+    return out;
+  }
+
+  /* 名称带空格且每段都是合法房间号 → 拆成多间（「3110 3210」是两间教室）。
+     自习室这类带说明的名字拆不出合法房间号，整体保留。 */
+  function splitRooms(nm) {
+    var parts = String(nm).split(/\s+/);
+    if (parts.length <= 1) return [nm];
+    for (var i = 0; i < parts.length; i++) {
+      // 必须含数字：「3050 (自习室)」不能拆出孤零零的「(自习室)」
+      if (!isRoomNumber(parts[i]) || !/\d/.test(parts[i])) return [nm];
+    }
+    return parts;
+  }
+
   /* 判断该教室是否应保留 */
   function shouldKeep(building, name, config, capacity) {
     var b = trim(building), c = trim(config);
@@ -207,6 +240,9 @@
         rec["教学楼"] = cells[0].textContent.trim();
         rec["名称"] = cells[1].textContent.trim();
       }
+      if (cells.length >= 2) {
+        rec["名称"] = cellText(cells[1]).replace(/\s+/g, " ").trim();
+      }
       rows.push(rec);
     });
     return rows;
@@ -262,10 +298,13 @@
               var cap = trim(r["容量"]);
               if (!shouldKeep(b, raw, cfg, cap)) return;
               var nm = cleanName(b, raw);
-              if (!nm) return;
+              if (!nm || !/\d/.test(nm)) return;   // 纯「（自习室）」这类没有房号的数据没有意义
               keptTotal++;
-              cnt++;
-              (g[b] = g[b] || []).push(nm);
+              var names = splitRooms(nm);
+              cnt += names.length;
+              for (var k = 0; k < names.length; k++) {
+                (g[b] = g[b] || []).push(names[k]);
+              }
             });
             slots.push({ label: label, ok: true, count: cnt, buildings: g });
           } else {
@@ -694,38 +733,73 @@
     }
   };
 
-  /* 课表跳空教室：只查指定日期的单个时段，一次请求即可返回 */
-  window.nqFetchSlot = async function (date, tb, te, label) {
+  /* 课表跳空教室：查指定日期的某一组时段。
+   *
+   * 除了目标时段，还会顺带查前后相邻的两组（由 Java 侧算好传进来，已跳过
+   * 「昼间1-8节」这种合并项）。原因：单看一组数据没法判断「比上一时段新增」
+   * 和「下个时段将上课」，那两个标记正是这张表最有用的一部分。
+   * 邻居查不到不影响主结果 —— 少一个标记，好过整页报错。 */
+  window.nqFetchSlot = async function (date, tb, te, label, ptb, pte, ntb, nte) {
     try {
       var BASE = base();
-      var rows = await query(BASE, String(date), String(tb), String(te));
-      var g = {}, cnt = 0, raw = 0;
-      rows.forEach(function (r) {
-        raw++;
-        var nm0 = trim(r["名称"]);
-        var b = trim(r["教学楼"]) || inferBuilding(nm0) || "其他";
-        if (!shouldKeep(b, nm0, trim(r["教室设备配置"]), trim(r["容量"]))) return;
-        var nm = cleanName(b, nm0);
-        if (!nm) return;
-        cnt++;
-        (g[b] = g[b] || []).push(nm);
+
+      async function one(t, e, lbl) {
+        var rows = await query(BASE, String(date), String(t), String(e));
+        var g = {}, cnt = 0, raw = 0;
+        rows.forEach(function (r) {
+          raw++;
+          var nm0 = trim(r["名称"]);
+          var b = trim(r["教学楼"]) || inferBuilding(nm0) || "其他";
+          if (!shouldKeep(b, nm0, trim(r["教室设备配置"]), trim(r["容量"]))) return;
+          var nm = cleanName(b, nm0);
+          if (!nm || !/\d/.test(nm)) return;   // 纯「（自习室）」这类没有房号的数据没有意义
+          var names = splitRooms(nm);
+          cnt += names.length;
+          for (var k = 0; k < names.length; k++) {
+            (g[b] = g[b] || []).push(names[k]);
+          }
+        });
+        return { label: String(lbl), ok: true, count: cnt, buildings: g, raw: raw, kept: cnt };
+      }
+
+      var slots = [];
+      var focus = 0;
+      var focusRaw = 0, focusKept = 0;
+
+      if (ptb > 0 && pte > 0) {
+        try {
+          if (GAP > 0) await sleep(GAP);
+          slots.push(await one(ptb, pte, ""));
+        } catch (e) { /* 邻居失败就少一个「新增」标记 */ }
+      }
+
+      focus = slots.length;
+      if (GAP > 0) await sleep(GAP);
+      var main = await one(tb, te, label);
+      focusRaw = main.raw;
+      focusKept = main.kept;
+      slots.push(main);
+
+      if (ntb > 0 && nte > 0) {
+        try {
+          if (GAP > 0) await sleep(GAP);
+          slots.push(await one(ntb, nte, ""));
+        } catch (e) { /* 邻居失败就少一个「将上课」标记 */ }
+      }
+
+      var out = slots.map(function (s) {
+        return { label: s.label, ok: s.ok, count: s.count, buildings: s.buildings };
       });
+
       window.Android.onResult(JSON.stringify({
         ok: true,
         single: true,
-        days: [{
-          date: String(date),
-          weekday: weekdayOf(date),
-          throttle: false,
-          slots: [{
-            label: String(label || (tb + "-" + te + "节")),
-            ok: true, count: cnt, buildings: g
-          }]
-        }],
+        focus: focus,
+        days: [{ date: String(date), weekday: weekdayOf(date), throttle: false, slots: out }],
         throttled: false,
-        rawTotal: raw,
-        keptTotal: cnt,
-        filtered: raw - cnt,
+        rawTotal: focusRaw,
+        keptTotal: focusKept,
+        filtered: focusRaw - focusKept,
         updated: new Date().toLocaleString("zh-CN")
       }));
     } catch (e) {

@@ -12,4 +12,13 @@
     <color name="brand_blue">#1B4D8F</color>
     <color name="brand_blue_bright">#2F6FED</color>
     <color name="accent_orange">#F2A33A</color>
+
+    <!-- 玻璃材质：半透明白 + 顶部高光 + 发丝描边。
+         85% 在纯白底上几乎看不出差别，压到 80% 才能透出底色的柔光；
+         描边提到 55% 白，边缘在浅色背景上也有轮廓。 -->
+    <color name="glass_fill">#B8FFFFFF</color>
+    <color name="glass_fill_soft">#B3FFFFFF</color>
+    <color name="glass_fill_faint">#75FFFFFF</color>
+    <color name="glass_border">#99FFFFFF</color>
+    <color name="glass_highlight">#40FFFFFF</color>
 </resources>

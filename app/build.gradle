@@ -10,8 +10,8 @@ android {
         applicationId "com.wanyuea.neuqclassroom"
         minSdk 26
         targetSdk 34
-            versionCode 111
-            versionName "1.1.1"
+        versionCode 124
+        versionName "1.4.0"
     }
 
     signingConfigs {
@@ -41,6 +41,18 @@ android {
     }
 }
 
+/*
+ * 单测依赖。
+ *
+ * 只有测试期用到，不进 APK —— 「不依赖任何第三方库」的发布包体积不变。
+ * org.json 必须显式引 Maven 的实现：单元测试跑在 JVM 上，android.jar 里的
+ * org.json 只是桩，不引它会在调用 JSONObject 时抛 "Method ... not mocked"。
+ */
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
+
 // 不依赖任何第三方库，构建更快、体积更小
 
 /*
@@ -54,6 +66,11 @@ android {
  */
 tasks.configureEach { t ->
     if (t.name == "preReleaseBuild") {
+        // 排课单测也当硬门槛：这一层真出过错（v1.1.1 跨周调休丢课），
+        // 断言失败就不该出包。临时跳过用 NCQ_SKIP_TESTS=1。
+        if (System.getenv("NCQ_SKIP_TESTS") == null) {
+            t.dependsOn("testDebugUnitTest")
+        }
         t.doFirst {
             def script = rootProject.file("tools/check-dates.js")
             if (!script.exists()) {

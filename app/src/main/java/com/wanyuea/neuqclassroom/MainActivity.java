@@ -16,7 +16,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -36,10 +38,10 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.Switch;
@@ -98,8 +100,21 @@ public class MainActivity extends Activity {
     private int queryStartOffset = 0;   // 起始日相对今天的天数（0=今天，1=明天）
     private int queryGap = 1000;
 
+    /* ---------- 课表左右滑动切周 ----------
+       放在 dispatchTouchEvent 里「旁听」，而不是给某个 View 挂 OnTouchListener：
+       课表格子里全是可点击的卡片，手势一旦被卡片消费，ScrollView 那层根本收不到。
+       旁听不改变事件分发，点按和纵向滚动都不受影响。 */
+    private static final int SWIPE_THRESHOLD_DP = 64;
+    private float swipeDownX;
+    private float swipeDownY;
+    private boolean swipeHandled;
+
     private WebView loginView;
-    private WebView resultView;
+    /** 课表 / 空教室都渲染成原生视图，这个 ScrollView 是它们的共同容器 */
+    private ScrollView resultScroll;
+    private FrameLayout resultHost;
+    private ScheduleNativeView scheduleView;
+    private RoomNativeView roomView;
     private View eamsBrowserOverlay;
     private EditText eamsAddressInput;
     private WebView webView;          // 内嵌浏览器：空闲教室总表网页
@@ -128,8 +143,6 @@ public class MainActivity extends Activity {
     private boolean schedSyncing = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String injectJs = "";
-    private String css = "";
-    private String scheduleCss = "";
     private boolean autoLoginActive = false;
     /** 冲突格子里用户点选的课程偏好；只影响界面显示，不修改课表数据。 */
     private final Map<String, String> conflictPrefs = new HashMap<>();
@@ -142,9 +155,6 @@ public class MainActivity extends Activity {
     private LinearLayout tabClassroom;
     private LinearLayout tabSchedule;
     private LinearLayout tabMore;
-    private View indClassroom;
-    private View indSchedule;
-    private View indMore;
     private ImageView iconClassroom;
     private ImageView iconSchedule;
     private ImageView iconMore;
@@ -232,7 +242,10 @@ public class MainActivity extends Activity {
     /** 本次会话是否已经提示过「每次打开自动导入」：问一次就够了 */
     private boolean autoImportPromptShown = false;
 
-    /** 网站上的 6 个时段，按本机格式的标签写法（顺序即本机缓存里的顺序，缺「昼间1-8节」由交集补齐） */
+    /**
+     * 网站上的 6 个时段（标签写法与本机一致）。
+     * 读出来的顺序就是网站的顺序；「昼间1-8节」由交集补出来，排在最后。
+     */
     private static final String[] SLOT_LABELS_WEB = {
             "上午1-2节", "上午3-4节", "下午5-6节", "下午7-8节", "晚上9-10节", "晚上11-12节"
     };
@@ -261,8 +274,8 @@ public class MainActivity extends Activity {
             + "'7-8':'下午7-8节','9-10':'晚上9-10节','11-12':'晚上11-12节'};"
             + "var OTHER={基础楼:'JCL',综合实验楼:'ZHSYL',地质楼:'DZL',管理楼:'GLL',科技楼:'KJL',人文楼:'RWL'};"
             + "function rooms(txt){if(!txt)return[];var t=txt.replace(/\\u00a0/g,' ').trim();"
-            + "if(!t||t==='无')return[];return t.split(/[\\s]+/).filter(function(x){return x&&x!=='无'})}"
-            + "function cell(id){var e=document.getElementById(id);return e?(e.textContent||''):''}"
+            + "if(!t||t==='无')return[];return t.split(/[\\s]+/).filter(function(x){return x&&/\\d/.test(x)&&x!=='无'})}"
+            + "function cell(id){var e=document.getElementById(id);return e?((e.innerText&&e.innerText.trim())?e.innerText:(e.textContent||'')):''}"
             + "var days=[];"
             + "for(var i=0;i<7;i++){"
             + "var cont=document.getElementById('day-'+i+'-content');if(!cont)break;"
@@ -272,11 +285,11 @@ public class MainActivity extends Activity {
             + "var gxg=[];"
             + "for(var f=1;f<=7;f++){var arr=rooms(cell('day-'+i+'-GXG'+f+'F'+slot));"
             + "for(var k=0;k<arr.length;k++){var nm=window.nqCleanName('工学馆',arr[k]);"
-            + "if(window.nqShouldKeep('工学馆',nm,'多媒体','60')){gxg.push(nm);cnt++}}}"
+            + "if(/\\d/.test(nm)&&window.nqShouldKeep('工学馆',nm,'多媒体','60')){gxg.push(nm);cnt++}}}"
             + "if(gxg.length)g['工学馆']=gxg;"
             + "for(var b in OTHER){var arr2=rooms(cell('day-'+i+'-'+OTHER[b]+slot));var list=[];"
             + "for(var k2=0;k2<arr2.length;k2++){var nm2=window.nqCleanName(b,arr2[k2]);"
-            + "if(window.nqShouldKeep(b,nm2,'多媒体','60')){list.push(nm2);cnt++}}"
+            + "if(/\\d/.test(nm2)&&window.nqShouldKeep(b,nm2,'多媒体','60')){list.push(nm2);cnt++}}"
             + "if(list.length)g[b]=list;}"
             + "slots.push({label:LABEL[slot],ok:true,count:cnt,buildings:g});"
             + "}"
@@ -359,7 +372,65 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         loginView = findViewById(R.id.loginView);
-        resultView = findViewById(R.id.resultView);
+        resultScroll = findViewById(R.id.resultScroll);
+        resultHost = findViewById(R.id.resultHost);
+        scheduleView = new ScheduleNativeView(this, new ScheduleNativeView.Listener() {
+            @Override
+            public void onCourseClick(int day, int start, int end) {
+                showCourseDetail(day, start, end);
+            }
+
+            @Override
+            public void onGhostClick(int day, int start, int end) {
+                showGhostCourseDetail(day, start, end);
+            }
+
+            @Override
+            public void onFreeClick(int day, int section) {
+                jumpToFreeRooms(day, section, section);
+            }
+
+            @Override
+            public void onPrevWeek() {
+                shiftWeek(-1);
+            }
+
+            @Override
+            public void onNextWeek() {
+                shiftWeek(1);
+            }
+
+            @Override
+            public void onThisWeek() {
+                resetWeek();
+            }
+
+            @Override
+            public void onGuideImport() {
+                loginRequested = true;
+                showLogin();
+                startScheduleImport();
+            }
+        });
+        roomView = new RoomNativeView(this, new RoomNativeView.Listener() {
+            @Override
+            public void onGuideQuery() {
+                loginRequested = true;
+                beginRoomQueryWithLogin();
+            }
+
+            @Override
+            public void onPickSlot(int slotIdx) {
+                switchSlot(slotIdx);
+            }
+        });
+        resultHost.addView(scheduleView,
+                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT));
+        resultHost.addView(roomView,
+                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT));
+        roomView.setVisibility(View.GONE);
         themeBackgroundImage = findViewById(R.id.themeBackgroundImage);
         setupEamsBrowserOverlay();
         statusText = findViewById(R.id.statusText);
@@ -370,9 +441,6 @@ public class MainActivity extends Activity {
         tabClassroom = findViewById(R.id.tabClassroom);
         tabSchedule = findViewById(R.id.tabSchedule);
         tabMore = findViewById(R.id.tabMore);
-        indClassroom = findViewById(R.id.indClassroom);
-        indSchedule = findViewById(R.id.indSchedule);
-        indMore = findViewById(R.id.indMore);
         iconClassroom = findViewById(R.id.iconClassroom);
         iconSchedule = findViewById(R.id.iconSchedule);
         iconMore = findViewById(R.id.iconMore);
@@ -381,12 +449,8 @@ public class MainActivity extends Activity {
         tvMore = findViewById(R.id.tvMore);
 
         injectJs = readAsset("inject.js");
-        css = readAsset("table.css");
-        scheduleCss = readAsset("schedule.css");
 
         setupWebView(loginView);
-        setupWebView(resultView);
-        resultView.addJavascriptInterface(new Bridge(), "AndroidResultHost");
         setupMorePage();
         setupSchedSubPages();
         setupWebBrowser();
@@ -396,7 +460,6 @@ public class MainActivity extends Activity {
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(loginView, true);
         // 持久化 Cookie（含 WebVPN / CAS 会话票据），下次启动仍是登录态
-        cm.setAcceptThirdPartyCookies(resultView, true);
         cm.setAcceptThirdPartyCookies(webView, true);
         cm.flush();
 
@@ -517,6 +580,84 @@ public class MainActivity extends Activity {
 
         // 尝试自动登录（复用已保存的 Cookie）
         tryAutoLoginThenLoad();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        trackHorizontalSwipe(ev);
+        return super.dispatchTouchEvent(ev);
+    }
+
+    /**
+     * 课表页左右滑动切周（只旁听，不消费事件）。
+     *
+     * 判定三条同时满足才切：
+     *   1. 当前就在课表页，且有课表数据（空教室页/空态不响应）；
+     *   2. 横向位移超过 64dp；
+     *   3. 横向明显大于纵向（1.3 倍），避免上下滚动时误触发。
+     * 一次手势最多切一周，切换动作 post 到下一帧，不在事件分发中途重建视图。
+     */
+    private void trackHorizontalSwipe(MotionEvent ev) {
+        if (resultScroll == null || scheduleView == null || roomView == null) return;
+        boolean scheduleMode = resultScroll.getVisibility() == View.VISIBLE
+                && scheduleView.getVisibility() == View.VISIBLE
+                && scheduleData != null;
+        // 空教室页也是单日视图，左右滑 = 换日期
+        boolean roomMode = resultScroll.getVisibility() == View.VISIBLE
+                && roomView.getVisibility() == View.VISIBLE
+                && scheduleView.getVisibility() != View.VISIBLE;
+        if (!scheduleMode && !roomMode) {
+            swipeHandled = false;
+            return;
+        }
+
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                swipeDownX = ev.getX();
+                swipeDownY = ev.getY();
+                swipeHandled = false;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                // 双指以上（缩放/多指拖动）不参与切周
+                swipeHandled = true;
+                break;
+            case MotionEvent.ACTION_UP:
+                if (swipeHandled) break;
+                float dx = ev.getX() - swipeDownX;
+                float dy = ev.getY() - swipeDownY;
+                int threshold = Math.round(SWIPE_THRESHOLD_DP
+                        * getResources().getDisplayMetrics().density);
+                if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 1.3f) {
+                    swipeHandled = true;
+                    final int delta = dx < 0 ? 1 : -1;   // 左滑看下一个
+                    if (scheduleMode) mainHandler.post(() -> swipeWeek(delta));
+                    else mainHandler.post(() -> swipeDay(delta));
+                }
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                swipeHandled = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** 空教室页滑动换日期：动画在视图内部做，这里负责边界提示与触感 */
+    private void swipeDay(int delta) {
+        if (!roomView.shiftDay(delta)) {
+            Toast.makeText(this, delta > 0 ? "已经是最后一天" : "已经是第一天",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        roomView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        // 换了一天，内容整块变了，回到顶部比停在上一天的滚动位置更合理
+        resultScroll.scrollTo(0, 0);
+    }
+
+    /** 滑动切周：过渡动画统一在 shiftWeek 里做，这里只补触感反馈 */
+    private void swipeWeek(int delta) {
+        if (!shiftWeek(delta)) return;
+        scheduleView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
     }
 
     /**
@@ -800,7 +941,7 @@ public class MainActivity extends Activity {
      */
     private void showContentView(View target) {
         if (target == null) return;
-        View[] all = {loginView, resultView, morePage, webPage,
+        View[] all = {loginView, resultScroll, morePage, webPage,
                 schedSettingsPage, courseManagerPage};
         for (View v : all) {
             if (v != null && v != target) v.setVisibility(View.GONE);
@@ -942,11 +1083,31 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showHtml(String html) {
-        showContentView(resultView);
+    /** 渲染空教室总表（原生视图） */
+    private void showRoom(JSONObject o) {
+        showContentView(resultScroll);
         setEamsBrowserOverlay(false);
         applyUi(UiState.ROOM_DATA);
-        resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+        scheduleView.setVisibility(View.GONE);
+        roomView.setVisibility(View.VISIBLE);
+
+        // 单时段视图顶部的快捷切换：跳过「昼间1-8节」这个合并统计项
+        int n = 0;
+        for (int i = 0; i < FREE_SLOTS.length; i++) if (!isMergedSlot(i)) n++;
+        String[] labels = new String[n];
+        int[] indices = new int[n];
+        int active = 0, k = 0;
+        for (int i = 0; i < FREE_SLOTS.length; i++) {
+            if (isMergedSlot(i)) continue;
+            labels[k] = FREE_SLOTS[i][0] + "-" + FREE_SLOTS[i][1] + " 节";
+            indices[k] = i;
+            if (FREE_SLOTS[i][0] == singleTb && FREE_SLOTS[i][1] == singleTe) active = k;
+            k++;
+        }
+
+        roomView.render(RoomTableModel.build(o, highlightDate, highlightTb,
+                highlightSlotIdx, singleMode), labels, indices, active);
+        resultScroll.scrollTo(0, 0);
     }
 
     /* ---------- JS 回调 ---------- */
@@ -1043,7 +1204,7 @@ public class MainActivity extends Activity {
                             c.put("fromCache", true);
                             c.put("cacheAgeText", ResultCache.ageText(MainActivity.this));
                             c.put("cacheExpired", ResultCache.isExpired(MainActivity.this));
-                            showHtml(buildHtml(c));
+                            showRoom(c);
                             statusText.setText("实时查询失败，显示上次数据（"
                                     + ResultCache.ageText(MainActivity.this) + "）");
                         } else {
@@ -1058,7 +1219,7 @@ public class MainActivity extends Activity {
                     }
                     CookieManager.getInstance().flush();
 
-                    showHtml(buildHtml(o));
+                    showRoom(o);
                     if (o.optBoolean("throttled", false)) {
                         statusText.setText("更新于 " + o.optString("updated", "")
                                 + "（疑似被限流，各时段数量相同，建议重查）");
@@ -1130,71 +1291,6 @@ public class MainActivity extends Activity {
                 }
             });
         }
-
-        /** 点击空白时段 → 跳到空教室页查这一节的空闲教室 */
-        /** 点周次条中间 → 重新选开学日期 */
-        @JavascriptInterface
-        public void setTermStart() {
-            mainHandler.post(() -> resetTermStart());
-        }
-
-        @JavascriptInterface
-        public void onFreeClick(final int day, final int section) {
-            mainHandler.post(() -> jumpToFreeRooms(day, section, section));
-        }
-
-        /**
-         * 结果页顶部时段快捷切换：点了「下午5-6节」就换到那一组重查。
-         * 日期沿用当前展示的那一天，所以只传时段下标。
-         */
-        @JavascriptInterface
-        public void pickSlot(final int slotIdx) {
-            mainHandler.post(() -> switchSlot(slotIdx));
-        }
-
-        /** 点击课程卡片 → 显示这节课的详情 */
-        @JavascriptInterface
-    public void onCourseClick(final int day, final int startSection, final int endSection) {
-        mainHandler.post(() -> showCourseDetail(day, startSection, endSection));
-    }
-
-    /** 点原位置虚线卡：查不到空教室，但应能看到这门课的详情和调课去向 */
-    @JavascriptInterface
-    public void onGhostClick(final int day, final int startSection, final int endSection) {
-        mainHandler.post(() -> showGhostCourseDetail(day, startSection, endSection));
-    }
-
-        @JavascriptInterface
-        public void prevWeek() {
-            mainHandler.post(() -> shiftWeek(-1));
-        }
-
-        @JavascriptInterface
-        public void nextWeek() {
-            mainHandler.post(() -> shiftWeek(1));
-        }
-
-        @JavascriptInterface
-        public void thisWeek() {
-            mainHandler.post(() -> resetWeek());
-        }
-
-        /* ---------- 空态页里的引导入口 ----------
-           课表 / 空教室都没有数据时，空态页会渲染一个按钮直接调这里。
-           走的是和「更多 → 教务处登录」完全相同的路径（打开教务 WebView），
-           所以用户不用先自己找到「更多」再去登录。 */
-
-        /** 空课表页的引导：登录教务处并导入课表 */
-        @JavascriptInterface
-        public void guideImportSchedule() {
-            mainHandler.post(() -> startScheduleImport());
-        }
-
-        /** 空空教室页的引导：登录教务处并查询空教室 */
-        @JavascriptInterface
-        public void guideQueryRooms() {
-            mainHandler.post(MainActivity.this::beginRoomQueryWithLogin);
-        }
     }
 
     /**
@@ -1215,525 +1311,6 @@ public class MainActivity extends Activity {
         setBusy(true);
         progressBar.setProgress(0);
         loginView.loadUrl(EAMS_BASE + "classroom/apply/free!search.action");
-    }
-
-    /* ---------- 生成表格 HTML（按楼层划分，对齐原项目） ---------- */
-
-    /** 按楼层划分的楼栋：工学馆按楼层分行，其余楼栋整体一行 */
-    private static final String FLOOR_BUILDING = "工学馆";
-    /** 工学馆实际到 8 层（含 803/825 等），取 9 层留余量 */
-    private static final int MAX_FLOOR = 9;
-
-    /**
-     * 楼栋 → 校区 Tab 的分组。
-     *
-     * 参照东秦空闲教室总表的三分区：工学馆（按楼层拆）、本部其它、南校区。
-     * 每组内的楼栋顺序即展示顺序；未列入的楼栋归到「本部其它」并追加在后。
-     */
-    private static final String[] CAMPUS_TABS = {"工学馆", "本部其它", "南校区"};
-    private static final String[][] CAMPUS_BUILDINGS = {
-            {"工学馆"},
-            {"基础楼", "综合实验楼", "地质楼", "管理楼"},
-            {"科技楼", "人文楼"}
-    };
-
-    /** 楼栋展示顺序（工学馆排第一，其余按此顺序），保留给课表联动等旧逻辑使用 */
-    private static final String[] BUILDING_ORDER = {
-            "工学馆", "基础楼", "综合实验楼", "地质楼", "管理楼", "科技楼", "人文楼"
-    };
-
-    /**
-     * 空教室总表的交互脚本。
-     *
-     * 只用事件委托绑一次，不给每个元素挂 onclick —— 一天最多 3 个 Tab × 6 个时段，
-     * 内联 onclick 会让 HTML 膨胀不少，而且以后改结构容易漏。
-     */
-    private static final String TABLE_SCRIPT =
-            "<script>(function(){"
-            + "function closest(el,sel){while(el&&el.nodeType===1){if(el.matches(sel))return el;el=el.parentNode;}return null;}"
-            // 楼栋 Tab：切 active，同时让同容器内的 content 跟着切
-            + "function pickTab(btn){"
-            + "var bar=btn.parentNode;"
-            + "var kids=bar.children;"
-            + "for(var i=0;i<kids.length;i++){kids[i].classList.remove('active');}"
-            + "btn.classList.add('active');"
-            + "var box=bar.parentNode;"
-            + "for(var j=0;j<box.children.length;j++){"
-            + "var c=box.children[j];"
-            + "if(c.classList&&c.classList.contains('tab-content')){c.classList.remove('active');}"
-            + "}"
-            + "var target=document.getElementById(btn.getAttribute('data-tab'));"
-            + "if(target)target.classList.add('active');"
-            + "}"
-            // 时段折叠
-            + "function fold(h){"
-            + "h.classList.toggle('collapsed');"
-            + "var b=document.getElementById(h.getAttribute('data-fold'));"
-            + "if(b)b.classList.toggle('collapsed',h.classList.contains('collapsed'));"
-            + "}"
-            + "document.addEventListener('click',function(e){"
-            + "var t=closest(e.target,'.tab-button');if(t){pickTab(t);return;}"
-            + "var h=closest(e.target,'.timeslot-title');if(h){fold(h);return;}"
-            + "},false);"
-            + "})();</script>";
-
-    /**
-     * 单时段视图顶部的时段快捷切换条。
-     *
-     * 用户从课表点进来时只查了一组（比如第 3-4 节），这一排按钮让他不用退回课表
-     * 就能直接换到别的一组重查。「昼间1-8节」是教务的合并统计项，不放进切换条。
-     */
-    private void appendSlotSwitcher(StringBuilder sb) {
-        sb.append("<div class=\"slotbar\">")
-                .append("<div class=\"slotbar-tip\">点课表空白格只查了这一组，"
-                        + "想换别的时段直接点下面：</div>")
-                .append("<div class=\"slotbar-btns\">");
-        for (int i = 0; i < FREE_SLOTS.length; i++) {
-            if (i == 4) continue;    // 跳过「昼间1-8节」合并项
-            int tb = FREE_SLOTS[i][0], te = FREE_SLOTS[i][1];
-            boolean cur = (tb == singleTb && te == singleTe);
-            sb.append("<button class=\"slotbtn").append(cur ? " cur" : "")
-                    .append("\" onclick=\"AndroidResultHost.pickSlot(").append(i).append(")\">")
-                    .append(tb).append("-").append(te).append(" 节")
-                    .append("</button>");
-        }
-        sb.append("</div></div>");
-    }
-
-    private String buildHtml(JSONObject o) throws Exception {
-        JSONArray days = o.getJSONArray("days");
-        for (int i = 0; i < days.length(); i++) {
-            JSONObject day = days.optJSONObject(i);
-            if (day == null) continue;
-            String weekday = day.optString("weekday");
-            // 兼容旧缓存：旧通道数据曾存成“周三”，渲染端固定补“周”。
-            if (weekday.startsWith("周") && weekday.length() > 1) {
-                day.put("weekday", weekday.substring(1));
-            }
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
-        sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-        sb.append("<title>东秦课表 · 空闲教室速查</title><style>").append(css).append("</style>");
-        sb.append("<style>:root{--page-bg:").append(cssColor(ThemeStore.background(this)))
-                .append(";--container-bg:").append(cssColor(ThemeStore.surface(this)))
-                .append(";--brand:").append(cssColor(ThemeStore.accent(this)))
-                .append(";}</style></head><body>");
-
-        // 页头：先给「今天」的日期，再给表格标题（对齐参考站点的版式）
-        sb.append("<h1>空闲教室总表</h1>");
-        sb.append("<p class=\"info-text\">数据实时取自教务系统 · 更新于 ")
-                .append(esc(o.optString("updated", ""))).append("</p>");
-
-        // 单时段视图（点课表空白格跳过来）：顶部给一排时段快捷切换
-        if (o.optBoolean("single", false)) {
-            appendSlotSwitcher(sb);
-        }
-
-        int raw = o.optInt("rawTotal", 0), kept = o.optInt("keptTotal", 0);
-        if (raw > 0) {
-            sb.append("<p class=\"info-text\">已排除实验室、机房、语音室等非自习教室：原始 ")
-                    .append(raw).append(" 条 → 保留 <b>").append(kept).append("</b> 条</p>");
-        }
-
-        // 离线缓存提示
-        if (o.optBoolean("fromCache", false)) {
-            String age = o.optString("cacheAgeText", "");
-            boolean expired = o.optBoolean("cacheExpired", false);
-            boolean stale = o.optBoolean("staleDay", false);
-            sb.append("<div class=\"cache")
-                    .append(expired || stale ? " expired" : "").append("\">");
-            if (expired) {
-                sb.append("数据已过期（").append(esc(age)).append("），请刷新");
-            } else if (stale) {
-                sb.append("这是 <b>")
-                        .append(esc(cacheFirstDate(o))).append("</b> 的数据，不是今天的 · ")
-                        .append(esc(age)).append("抓取");
-            } else {
-                sb.append("离线数据 · 上次抓取于 ").append(esc(age));
-            }
-            sb.append("</div>");
-        }
-
-        // 图例
-        sb.append("<div class=\"legend\">")
-                .append("<span><b>粗体</b> 全天有空</span>")
-                .append("<span><u>下划线</u> 比上一时段新增</span>")
-                .append("<span><del>删除线</del> 下个时段将上课</span>")
-                .append("</div>");
-
-        for (int i = 0; i < days.length(); i++) {
-            JSONObject d = days.getJSONObject(i);
-            JSONArray slots = d.getJSONArray("slots");
-            int nSlot = slots.length();
-
-            // 收集本日出现的楼栋
-            LinkedHashSet<String> present = new LinkedHashSet<>();
-            for (int s = 0; s < nSlot; s++) {
-                JSONArray names = slots.getJSONObject(s).getJSONObject("buildings").names();
-                if (names == null) continue;
-                for (int b = 0; b < names.length(); b++) present.add(names.getString(b));
-            }
-            // 按预设顺序排列，未知楼栋追加在后
-            List<String> ordered = new ArrayList<>();
-            for (String b : BUILDING_ORDER) if (present.contains(b)) ordered.add(b);
-            for (String b : present) if (!ordered.contains(b)) ordered.add(b);
-
-            String dDate = d.getString("date");
-            boolean isToday = dDate.equals(dateStr(System.currentTimeMillis()));
-            boolean isJumped = dDate.equals(highlightDate);
-            sb.append("<details class=\"day\"").append(i == 0 ? " open" : "").append("><summary>")
-                    .append(esc(dDate)).append(" 周").append(esc(d.optString("weekday", "")))
-                    .append(isToday ? "<span class=\"tag\">今天</span>" : "")
-                    .append(isJumped ? "<span class=\"tag jump\">从课表跳来</span>" : "")
-                    .append("</summary>");
-
-            if (d.optBoolean("throttle", false)) {
-                sb.append("<p class=\"warn\">⚠ 该天各时段数量完全相同，可能触发了教务的「请勿过快点击」限流。"
-                        + "请点「返回教务」稍等几秒后重查。</p>");
-            }
-
-            // 单时段视图：说明为什么只有一组数据；整表视图：说明为什么整天都查了
-            if (isJumped && highlightTb > 0) {
-                if (singleMode) {
-                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
-                            .append(" 节</b>，属 <b>").append(highlightTb).append("-")
-                            .append(highlightTb + 1).append(" 节</b> 这一组，"
-                                    + "下面是这一组所有空闲教室。</p>");
-                } else {
-                    sb.append("<p class=\"jump-tip\">你点的是 <b>第 ").append(highlightTb)
-                            .append(" 节</b>，这一天整个都查了。</p>");
-                }
-            }
-
-            // 全天空闲集合（用于加粗）
-            java.util.Map<String, java.util.Set<String>> allDay = computeAllDayFree(slots);
-
-            appendCampusTabs(sb, i, days, slots, ordered, allDay, isJumped);
-            sb.append("</details>");
-        }
-
-        sb.append("<p class=\"foot\">数据仅在你已登录的教务会话中读取，不会上传任何信息。</p>");
-        sb.append(TABLE_SCRIPT);
-        sb.append("</body></html>");
-        return sb.toString();
-    }
-
-    /**
-     * 输出某一天的「楼栋 Tab + 时段表格」主体。
-     *
-     * 结构对齐东秦空闲教室总表：
-     *   楼栋 Tab（工学馆 / 本部其它 / 南校区）
-     *     └ 每个时段一个可折叠区块
-     *         └ 一张表：工学馆按楼层为行（1F…9F），其它楼栋以楼栋名为行
-     *
-     * @param dayIdx  第几天（用于生成唯一 DOM id）
-     * @param ordered 本日实际出现的楼栋，已排序
-     */
-    private void appendCampusTabs(StringBuilder sb, int dayIdx, JSONArray days, JSONArray slots,
-                                  List<String> ordered,
-                                  java.util.Map<String, java.util.Set<String>> allDay,
-                                  boolean isJumped) throws Exception {
-        int nSlot = slots.length();
-
-        // 只保留本日真正有数据的 Tab；全空也保留工学馆，避免页面整个空掉
-        List<String> liveTabs = new ArrayList<>();
-        List<List<String>> liveBuildings = new ArrayList<>();
-        for (int t = 0; t < CAMPUS_TABS.length; t++) {
-            List<String> bs = new ArrayList<>();
-            for (String b : CAMPUS_BUILDINGS[t]) if (ordered.contains(b)) bs.add(b);
-            if (bs.isEmpty()) continue;
-            liveTabs.add(CAMPUS_TABS[t]);
-            liveBuildings.add(bs);
-        }
-        // 不在预设分组里的楼栋（教务新增了楼），统一塞进「本部其它」
-        List<String> known = new ArrayList<>();
-        for (String[] group : CAMPUS_BUILDINGS) {
-            for (String b : group) known.add(b);
-        }
-        for (String b : ordered) {
-            if (known.contains(b)) continue;
-            int qi = liveTabs.indexOf("本部其它");
-            if (qi < 0) {
-                liveTabs.add("本部其它");
-                liveBuildings.add(new ArrayList<>());
-                qi = liveTabs.size() - 1;
-            }
-            liveBuildings.get(qi).add(b);
-        }
-
-        if (liveTabs.isEmpty()) {
-            sb.append("<p class=\"empty-day\">这一天没有查到空闲教室</p>");
-            return;
-        }
-
-        sb.append("<div class=\"tab-container\"><div class=\"tab-buttons\">");
-        for (int t = 0; t < liveTabs.size(); t++) {
-            sb.append("<button class=\"tab-button").append(t == 0 ? " active" : "")
-                    .append("\" data-tab=\"tab-").append(dayIdx).append("-").append(t)
-                    .append("\">").append(esc(liveTabs.get(t))).append("</button>");
-        }
-        sb.append("</div>");
-
-        for (int t = 0; t < liveTabs.size(); t++) {
-            sb.append("<div class=\"tab-content").append(t == 0 ? " active" : "")
-                    .append("\" id=\"tab-").append(dayIdx).append("-").append(t).append("\">");
-            appendSlotSections(sb, dayIdx, t, slots, liveBuildings.get(t), allDay, isJumped);
-            sb.append("</div>");
-        }
-        sb.append("</div>");
-    }
-
-    /** 某个楼栋分组下，逐个时段输出「标题 + 表格」 */
-    private void appendSlotSections(StringBuilder sb, int dayIdx, int tabIdx, JSONArray slots,
-                                    List<String> buildings,
-                                    java.util.Map<String, java.util.Set<String>> allDay,
-                                    boolean isJumped) throws Exception {
-        int nSlot = slots.length();
-        boolean hasAny = false;
-
-        for (int s = 0; s < nSlot; s++) {
-            JSONArray slotRow = buildSlotTable(slots, s, buildings, allDay);
-            if (slotRow == null) continue;    // 该时段本分组无教室，整块省略
-            hasAny = true;
-
-            String label = slots.getJSONObject(s).getString("label");
-            // 高亮「从课表跳过来」的那一个时段：按下标比，不能按节次号比 ——
-            // 「3-4节」的节次号是 3，但它在 slots 数组里的下标是 1，混用会高亮错行
-            boolean hit = isJumped && s == highlightSlotIdx;
-            int shown = slotRow.length();
-
-            // 标题：可折叠，默认展开；从课表跳来的那一节标记出来
-            sb.append("<h3 class=\"timeslot-title").append(hit ? " hit" : "")
-                    .append("\" data-fold=\"body-").append(dayIdx).append("-").append(tabIdx)
-                    .append("-").append(s).append("\">")
-                    .append("<span class=\"toggle-icon\"></span>")
-                    .append(esc(label))
-                    .append("<span class=\"cnt-mini\">（").append(shown).append(" 行）</span>")
-                    .append("</h3>");
-
-            sb.append("<div class=\"timeslot-body\" id=\"body-")
-                    .append(dayIdx).append("-").append(tabIdx).append("-").append(s).append("\">")
-                    .append("<table class=\"slot-table\">");
-
-            for (int r = 0; r < shown; r++) {
-                JSONArray row = slotRow.getJSONArray(r);
-                String head = row.getString(0);
-                String headCls = row.getString(1);
-                String cells = row.getString(2);
-                sb.append("<tr><td class=\"").append(headCls).append("\">")
-                        .append(esc(head)).append("</td>")
-                        .append("<td class=\"rooms\">").append(cells).append("</td></tr>");
-            }
-            sb.append("</table></div>");
-        }
-
-        if (!hasAny) {
-            sb.append("<p class=\"empty-day\">这些时段都没有空闲教室</p>");
-        }
-    }
-
-    /**
-     * 构建某个时段、某个楼栋分组下的表格行。
-     *
-     * 返回值为「行数组」，每行是 3 元组 [行头文字, 行头样式类, 教室单元格 HTML]：
-     *   · 工学馆 → 按楼层拆行，行头 "1F"…"9F"，样式类 floor
-     *   · 其它楼栋 → 每个楼栋一行，行头是楼栋名，样式类 building
-     * 该时段本分组完全没有教室时返回 null（调用方跳过整块）。
-     */
-    private JSONArray buildSlotTable(JSONArray slots, int slotIdx, List<String> buildings,
-                                     java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
-        int nSlot = slots.length();
-        JSONArray rows = new JSONArray();
-        boolean any = false;
-
-        for (String b : buildings) {
-            if (FLOOR_BUILDING.equals(b)) {
-                // 工学馆：1..MAX_FLOOR 逐层，另有无法归层的房间放最后一行
-                for (int floor = 1; floor <= MAX_FLOOR; floor++) {
-                    JSONArray r = slotRow(slots, slotIdx, nSlot, b, floor, allDay);
-                    if (r != null) { rows.put(r); any = true; }
-                }
-                JSONArray rest = slotRow(slots, slotIdx, nSlot, b, 0, allDay);
-                if (rest != null) { rows.put(rest); any = true; }
-            } else {
-                // 其余楼栋：整栋一行，不拆楼层
-                JSONArray r = slotRow(slots, slotIdx, nSlot, b, -1, allDay);
-                if (r != null) { rows.put(r); any = true; }
-            }
-        }
-        return any ? rows : null;
-    }
-
-    /**
-     * 生成单行：[行头, 行头类名, 教室 HTML]，该行在本时段无教室则返回 null。
-     *
-     * @param floor -1=整栋一行；0=无法归入 1..MAX_FLOOR 的房间；1..MAX_FLOOR=指定楼层
-     */
-    private JSONArray slotRow(JSONArray slots, int slotIdx, int nSlot, String building, int floor,
-                              java.util.Map<String, java.util.Set<String>> allDay) throws Exception {
-        List<String> rooms = new ArrayList<>();
-        JSONArray arr = roomsOf(slots, slotIdx, building);
-        if (arr != null) {
-            for (int k = 0; k < arr.length(); k++) {
-                String r = arr.optString(k, "");
-                if (r.isEmpty()) continue;
-                int f = floorOf(r);
-                if (floor > 0 && f != floor) continue;
-                if (floor == 0 && f > 0 && f <= MAX_FLOOR) continue;
-                rooms.add(r);
-            }
-        }
-        if (rooms.isEmpty()) return null;
-        sortRooms(rooms);
-
-        StringBuilder cells = new StringBuilder();
-        for (int k = 0; k < rooms.size(); k++) {
-            if (k > 0) cells.append(" ");
-            cells.append("<span class=\"r\">")
-                    .append(styleRoom(rooms.get(k), building, slotIdx, nSlot, slots, allDay))
-                    .append("</span>");
-        }
-
-        String head;
-        String cls;
-        if (floor > 0) {
-            head = floor + "F";
-            cls = "floor";
-        } else if (floor == 0) {
-            head = "其他";
-            cls = "floor";
-        } else {
-            head = building;
-            cls = "building";
-        }
-        JSONArray row = new JSONArray();
-        row.put(head).put(cls).put(cells.toString());
-        return row;
-    }
-
-    /** null 安全：取某天某时段的某楼栋房间数组 */
-    private static JSONArray roomsOf(JSONArray slots, int idx, String building) {
-        JSONObject slot = slots.optJSONObject(idx);
-        if (slot == null) return null;
-        JSONObject bk = slot.optJSONObject("buildings");
-        if (bk == null) return null;
-        return bk.optJSONArray(building);
-    }
-
-    /** 从房间号推断楼层：取前导数字，若为 4 位数（如 4012）取首位，3 位（如 410）取首位后一位 */
-    private static int floorOf(String room) {
-        StringBuilder digits = new StringBuilder();
-        for (int i = 0; i < room.length(); i++) {
-            char ch = room.charAt(i);
-            if (Character.isDigit(ch)) digits.append(ch);
-            else break;
-        }
-        if (digits.length() == 0) return -1;
-        try {
-            int n = Integer.parseInt(digits.toString());
-            if (digits.length() >= 4) return n / 1000;        // 4012 -> 4 层
-            if (digits.length() == 3) return n / 100;         // 410  -> 4 层
-            if (digits.length() == 2) return n / 10;          // 41   -> 4 层
-            return n;
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    /** 数字优先排序：410 在 508 前，同数字按后缀字母 */
-    private static void sortRooms(List<String> rooms) {
-        rooms.sort((a, b) -> {
-            int na = leadingNumber(a), nb = leadingNumber(b);
-            if (na != nb) return Integer.compare(na, nb);
-            return a.compareTo(b);
-        });
-    }
-
-    private static int leadingNumber(String s) {
-        int i = 0;
-        while (i < s.length() && Character.isDigit(s.charAt(i))) i++;
-        if (i == 0) return Integer.MAX_VALUE;
-        try {
-            return Integer.parseInt(s.substring(0, i));
-        } catch (NumberFormatException e) {
-            return Integer.MAX_VALUE;
-        }
-    }
-
-    /** 加粗=全天有空；下划线=比上一时段新增；删除线=下个时段将上课 */
-    private String styleRoom(String room, String building, int slotIdx, int nSlot,
-                             JSONArray slots, java.util.Map<String, java.util.Set<String>> allDay) {
-        boolean bold = false;
-        java.util.Set<String> set = allDay.get(building);
-        if (set != null) bold = set.contains(room);
-
-        boolean underline = false;
-        if (slotIdx > 0) {
-            underline = !containsRoom(slots, slotIdx - 1, building, room);
-        }
-        boolean strike = false;
-        if (slotIdx < nSlot - 1) {
-            strike = !containsRoom(slots, slotIdx + 1, building, room);
-        }
-
-        String s = esc(room);
-        if (underline) s = "<u>" + s + "</u>";
-        if (strike) s = "<del>" + s + "</del>";
-        if (bold) s = "<strong>" + s + "</strong>";
-        return s;
-    }
-
-    private static boolean containsRoom(JSONArray slots, int idx, String building, String room) {
-        JSONArray arr = roomsOf(slots, idx, building);
-        if (arr == null) return false;
-        for (int k = 0; k < arr.length(); k++) {
-            if (room.equals(arr.optString(k, ""))) return true;
-        }
-        return false;
-    }
-
-    /** 计算「全天空闲」教室集合（在全部时段都出现） */
-    private static java.util.Map<String, java.util.Set<String>> computeAllDayFree(JSONArray slots) {
-        java.util.Map<String, java.util.Set<String>> result = new java.util.HashMap<>();
-        int nSlot = slots.length();
-        if (nSlot == 0) return result;
-
-        // 收集所有出现过的楼栋
-        java.util.Set<String> buildings = new java.util.HashSet<>();
-        for (int s = 0; s < nSlot; s++) {
-            JSONObject slot = slots.optJSONObject(s);
-            if (slot == null) continue;
-            JSONObject bk = slot.optJSONObject("buildings");
-            if (bk == null) continue;
-            JSONArray names = bk.names();
-            if (names == null) continue;
-            for (int b = 0; b < names.length(); b++) {
-                buildings.add(names.optString(b, ""));
-            }
-        }
-
-        for (String building : buildings) {
-            java.util.Set<String> common = null;
-            for (int s = 0; s < nSlot; s++) {
-                JSONArray arr = roomsOf(slots, s, building);
-                java.util.Set<String> cur = new java.util.HashSet<>();
-                if (arr != null) {
-                    for (int k = 0; k < arr.length(); k++) {
-                        String r = arr.optString(k, "");
-                        if (!r.isEmpty()) cur.add(r);
-                    }
-                }
-                if (common == null) common = cur;
-                else common.retainAll(cur);
-            }
-            if (common != null && !common.isEmpty()) result.put(building, common);
-        }
-        return result;
-    }
-
-    private static String esc(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private String readAsset(String name) {
@@ -2448,11 +2025,9 @@ public class MainActivity extends Activity {
         int surface = ThemeStore.surface(this);
 
         View root = findViewById(R.id.mainRoot);
-        View topBar = findViewById(R.id.topBar);
-        View bottomNav = findViewById(R.id.bottomNav);
-        if (root != null) root.setBackgroundColor(background);
-        if (topBar != null) topBar.setBackgroundColor(background);
-        if (bottomNav != null) bottomNav.setBackgroundColor(background);
+        if (root != null) root.setBackground(new AuroraDrawable(background, accent));
+        // 顶栏透明、底栏是玻璃 Dock —— 这里不能再 setBackgroundColor，
+        // 否则会把 XML / drawable 里配好的玻璃材质整个盖掉。
 
         boolean hasImage = ThemeStore.hasImage(this);
         if (themeBackgroundImage != null) {
@@ -2472,7 +2047,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        getWindow().setStatusBarColor(background);
+        getWindow().setStatusBarColor(blendColor(background, 0xFFFFFFFF, 0.62f));
         getWindow().setNavigationBarColor(surface);
 
         btnRefreshData.setImageTintList(ColorStateList.valueOf(accent));
@@ -2495,9 +2070,9 @@ public class MainActivity extends Activity {
         applyTabHighlight(currentTab);
 
         if (currentTab == TAB_SCHEDULE && scheduleData != null
-                && resultView.getVisibility() == View.VISIBLE) {
+                && resultScroll.getVisibility() == View.VISIBLE) {
             renderSchedule();
-        } else if (currentTab == TAB_CLASSROOM && resultView.getVisibility() == View.VISIBLE) {
+        } else if (currentTab == TAB_CLASSROOM && resultScroll.getVisibility() == View.VISIBLE) {
             String cached = ResultCache.load(this);
             if (cached != null) {
                 try {
@@ -2506,7 +2081,7 @@ public class MainActivity extends Activity {
                     o.put("cacheAgeText", ResultCache.ageText(this));
                     o.put("cacheExpired", ResultCache.isExpired(this));
                     o.put("staleDay", isCacheStaleToday(o));
-                    showHtml(buildHtml(o));
+                    showRoom(o);
                 } catch (Exception ignored) {
                 }
             }
@@ -2525,7 +2100,10 @@ public class MainActivity extends Activity {
             boolean marked = Boolean.TRUE.equals(view.getTag(R.id.theme_surface_tag));
             if (marked || isThemeSurfaceColor(current)) {
                 android.graphics.drawable.Drawable changed = shape.mutate();
-                ((GradientDrawable) changed).setColor(surface);
+                // 保留原透明度：卡片是半透明玻璃，直接 setColor(surface) 会把它刷成不透明
+                int alpha = android.graphics.Color.alpha(current);
+                ((GradientDrawable) changed).setColor(
+                        (surface & 0x00FFFFFF) | (alpha << 24));
                 view.setBackground(changed);
                 view.setTag(R.id.theme_surface_tag, true);
             }
@@ -2554,7 +2132,8 @@ public class MainActivity extends Activity {
     }
 
     private static boolean isThemeSurfaceColor(int color) {
-        if (android.graphics.Color.alpha(color) < 240) return false;
+        // 只比 RGB，不看 alpha：玻璃卡片是半透明的（alpha 不到 240），
+        // 按 alpha 卡会把它们排除掉，用户改「卡片色」就不生效了。
         return android.graphics.Color.red(color) >= 242
                 && android.graphics.Color.green(color) >= 242
                 && android.graphics.Color.blue(color) >= 242;
@@ -2569,17 +2148,6 @@ public class MainActivity extends Activity {
         int b = Math.round(android.graphics.Color.blue(base) * keep
                 + android.graphics.Color.blue(overlay) * amount);
         return android.graphics.Color.rgb(r, g, b);
-    }
-
-    private static int darkenColor(int color, float factor) {
-        int r = Math.round(android.graphics.Color.red(color) * factor);
-        int g = Math.round(android.graphics.Color.green(color) * factor);
-        int b = Math.round(android.graphics.Color.blue(color) * factor);
-        return android.graphics.Color.rgb(r, g, b);
-    }
-
-    private static String cssColor(int color) {
-        return String.format(Locale.US, "#%06X", 0xFFFFFF & color);
     }
 
     /* ---------- 缓存管理弹窗 ---------- */
@@ -2921,7 +2489,7 @@ public class MainActivity extends Activity {
     /* ==================== 课表 ==================== */
 
     private static final String[] WD_CN = {"一", "二", "三", "四", "五", "六", "日"};
-    private static final int PERIODS = 12;
+    private static final int PERIODS = PlacementResolver.PERIODS;
     private static final long DAY_MS = 24L * 60 * 60 * 1000;
 
     private SharedPreferences prefs() {
@@ -3027,37 +2595,25 @@ public class MainActivity extends Activity {
     }
 
     private static boolean inWeek(JSONArray weeks, int week) {
-        if (weeks == null || weeks.length() == 0) return true;   // 无周次信息则不过滤
-        for (int i = 0; i < weeks.length(); i++) {
-            if (weeks.optInt(i, -1) == week) return true;
-        }
-        return false;
+        return PlacementResolver.inWeek(weeks, week);
     }
 
     /** 底部 Tab 高亮：三个 Tab 共用一处，避免以后加 Tab 漏改 */
     private void applyTabHighlight(int tab) {
-        applyTabItem(iconClassroom, indClassroom, tvClassroom, tab == TAB_CLASSROOM);
-        applyTabItem(iconSchedule, indSchedule, tvSchedule, tab == TAB_SCHEDULE);
-        applyTabItem(iconMore, indMore, tvMore, tab == TAB_MORE);
+        applyTabItem(tabClassroom, iconClassroom, tvClassroom, tab == TAB_CLASSROOM);
+        applyTabItem(tabSchedule, iconSchedule, tvSchedule, tab == TAB_SCHEDULE);
+        applyTabItem(tabMore, iconMore, tvMore, tab == TAB_MORE);
     }
 
-    private void applyTabItem(ImageView icon, View indicator, TextView label, boolean active) {
+    /** 底部 Tab：激活项背后一块玻璃亮斑（对齐酷安风格的液态玻璃 Dock） */
+    private void applyTabItem(LinearLayout cell, ImageView icon, TextView label, boolean active) {
         int color = active ? ThemeStore.accent(this) : TAB_OFF;
         icon.setColorFilter(color);
         label.setTextColor(color);
         label.setTypeface(null, active
                 ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
-        indicator.animate().cancel();
-        if (active) {
-            indicator.setVisibility(View.VISIBLE);
-            indicator.setAlpha(0f);
-            indicator.setScaleX(0.65f);
-            indicator.animate().alpha(1f).scaleX(1f).setDuration(180).start();
-        } else {
-            indicator.setVisibility(View.INVISIBLE);
-            indicator.setAlpha(0f);
-            indicator.setScaleX(0.65f);
-        }
+        cell.setBackgroundResource(active
+                ? R.drawable.nav_blob_active : R.drawable.nav_blob_inactive);
     }
 
     private void switchTab(int tab) {
@@ -3097,7 +2653,7 @@ public class MainActivity extends Activity {
                     // 缓存存的是「抓取当天起算」的若干天，隔天再打开首日就不是今天了
                     // 加一句提示，避免把昨天的空教室当成今天的
                     o.put("staleDay", isCacheStaleToday(o));
-                    showHtml(buildHtml(o));   // 内部会切到 ROOM_DATA
+                    showRoom(o);   // 内部会切到 ROOM_DATA
                     String age = ResultCache.ageText(this);
                     if (ResultCache.isExpired(this)) {
                         statusText.setText("数据已过期（" + age + "），建议刷新");
@@ -3122,7 +2678,7 @@ public class MainActivity extends Activity {
                 statusText.setText(ScheduleCache.currentName(this)
                         + " · 第 " + currentWeek() + " 周");
             } else {
-                showScheduleHtml(emptyScheduleHtml());
+                showScheduleEmpty();
                 applyUi(UiState.SCHEDULE_EMPTY);
                 statusText.setText("「" + ScheduleCache.currentName(this)
                         + "」还没有内容，点右上角导入课表");
@@ -3369,7 +2925,7 @@ public class MainActivity extends Activity {
                 day.put("throttle", false);
 
                 // 网站只有 6 个时段；本机格式里还有一个「昼间1-8节」，
-                // 用 1-2/3-4/5-6/7-8 四个时段的交集补出来
+                // 用 1-2/3-4/5-6/7-8 四个时段的交集补出来，排在最后
                 Map<String, JSONObject> bySlot = new HashMap<>();
                 JSONArray srcSlots = src.optJSONArray("slots");
                 if (srcSlots != null) {
@@ -3418,14 +2974,8 @@ public class MainActivity extends Activity {
                     sl.put("ok", true);
                     sl.put("count", cnt);
                     sl.put("buildings", bs);
-                    // 插在 7-8 之后、9-10 之前，与本机格式一致
-                    JSONArray reordered = new JSONArray();
-                    for (int s = 0; s < slots.length(); s++) {
-                        JSONObject x = slots.optJSONObject(s);
-                        if (x != null && "晚上9-10节".equals(x.optString("label"))) reordered.put(sl);
-                        reordered.put(x);
-                    }
-                    slots = reordered;
+                    // 追加到最后，与本机格式一致（合并项排在 11-12 之后，不打断自然顺序）
+                    slots.put(sl);
                 }
                 day.put("slots", slots);
                 days.put(day);
@@ -3443,7 +2993,7 @@ public class MainActivity extends Activity {
 
             boolean onRoomTab = (currentTab == TAB_CLASSROOM);
             if (onRoomTab) {
-                showHtml(buildHtml(out));
+                showRoom(out);
                 statusText.setText("已从通道2更新 · " + (days.length() > 0
                         ? rawDays.optJSONObject(0).optString("date") : ""));
             } else {
@@ -3990,18 +3540,42 @@ public class MainActivity extends Activity {
     }
 
     /** 翻周只影响本次会话，不写盘 —— 下次打开 App 仍从本周开始 */
-    private void shiftWeek(int delta) {
-        if (scheduleData == null) return;
+    /** @return 是否真的切了周（到头了返回 false） */
+    private boolean shiftWeek(int delta) {
+        if (scheduleData == null) return false;
         int target = currentWeek() + delta;
         if (target < 1 || target > maxWeekOfView()) {
             Toast.makeText(this, target < 1 ? "已经是第 1 周" : "已经是最后一周",
                     Toast.LENGTH_SHORT).show();
-            return;
+            return false;
         }
         weekOffset = target - actualCurrentWeek();
         renderSchedule();
+        animateWeekIn(delta);
         statusText.setText("第 " + currentWeek() + " 周"
                 + (weekOffset == 0 ? "" : "（点「本周」回到当前周）"));
+        return true;
+    }
+
+    /**
+     * 切周过渡：从切换方向轻轻滑入 + 淡入。
+     *
+     * 之前是 160ms / 28dp 的硬位移 —— 内容重建后位置还没落稳就被画出来，
+     * 看着像「闪一下」而不是「翻一页」。现在位移加大到 36dp、时长 220ms，
+     * 叠加一个 0.55→1 的淡入，并用减速插值收尾，起步快、落点稳。
+     */
+    private void animateWeekIn(int delta) {
+        if (scheduleView == null) return;
+        float offset = 36 * getResources().getDisplayMetrics().density;
+        scheduleView.animate().cancel();
+        scheduleView.setTranslationX(delta > 0 ? offset : -offset);
+        scheduleView.setAlpha(0.55f);
+        scheduleView.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(220)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
     }
 
     private void resetWeek() {
@@ -4041,7 +3615,7 @@ public class MainActivity extends Activity {
                 statusText.setText(name + " · 第 " + currentWeek() + " 周"
                         + (weekOffset == 0 ? "" : "（手动翻周中）"));
             } else {
-                showScheduleHtml(emptyScheduleHtml());
+                showScheduleEmpty();
                 applyUi(UiState.SCHEDULE_EMPTY);
                 statusText.setText("「" + name + "」还没有内容，点右上角导入课表");
             }
@@ -4582,7 +4156,7 @@ public class MainActivity extends Activity {
 
     /** 某门课在指定周实际生效的调课记录（没有则 null） */
     private AdjustCache.Adjust findEffective(String schedId, String courseKey, int week) {
-        for (AdjustCache.Adjust a : AdjustCache.forWeek(this, schedId, week)) {
+        for (AdjustCache.Adjust a : effectiveAdjusts(schedId, week)) {
             if (a.courseKey.equals(courseKey)) return a;
         }
         return null;
@@ -4654,9 +4228,7 @@ public class MainActivity extends Activity {
      * 下标会串到别的课上；而这四个字段描述的就是同一条排课记录，重导入后依然对得上。
      */
     private static String courseKey(JSONObject c) {
-        int st = c.optInt("startSection", 0);
-        return c.optString("name", "") + "|" + c.optInt("day", 0) + "|" + st + "|"
-                + c.optInt("endSection", st);
+        return PlacementResolver.courseKey(c);
     }
 
     /** 选择器里的一行：位置 · 课名 · 教室（已经调过课的显示新位置并标注） */
@@ -4725,476 +4297,132 @@ public class MainActivity extends Activity {
     private void renderSchedule() {
         if (scheduleData == null) return;
         try {
-            showScheduleHtml(buildScheduleHtml(scheduleData, currentWeek()));
+            renderScheduleNative();
             applyUi(UiState.SCHEDULE_DATA);
         } catch (Exception e) {
             statusText.setText("课表渲染失败：" + e.getMessage());
         }
     }
 
-    private void showScheduleHtml(String html) {
-        showContentView(resultView);
-        resultView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+    /**
+     * 把当前课表渲染成原生周视图。
+     *
+     * 只负责「凑素材」：课程位置由 {@link PlacementResolver} 算，排版由
+     * {@link ScheduleNativeView} 做。这里剩下的都是需要 Context 的东西
+     * （主题色、偏好设置、开学日期）。
+     */
+    private void renderScheduleNative() throws Exception {
+        if (scheduleData == null) return;
+        int week = currentWeek();
+        long weekMon = weekMonday(week);
+
+        ScheduleNativeView.Data d = new ScheduleNativeView.Data();
+        d.title = ScheduleCache.currentName(this);
+        d.termName = scheduleData.optString("termName", "");
+        d.updated = scheduleData.optString("updated", "");
+        d.week = week;
+        d.weekMonday = weekMon;
+        d.showSat = prefs().getBoolean(KEY_SHOW_SAT, true);
+        d.showSun = prefs().getBoolean(KEY_SHOW_SUN, true);
+        d.surfaceColor = ThemeStore.surface(this);
+        d.accentColor = ThemeStore.accent(this);
+        d.conflictPrefs = conflictPrefs;
+        // 复用 weekdayOf（1=周一 … 7=周日）。早先这里手写过一套星期换算且漏了 +1，
+        // 周一到周六的高亮整整偏了一列 —— 别再散开写这套换算了。
+        if (mondayOf(System.currentTimeMillis()) == weekMon) {
+            d.todayDay = weekdayOf(System.currentTimeMillis());
+        }
+
+        JSONArray slots = scheduleData.optJSONArray("timeSlots");
+        if (slots != null) {
+            for (int r = 0; r < PERIODS && r < slots.length(); r++) {
+                JSONObject t = slots.optJSONObject(r);
+                if (t == null) continue;
+                d.slotStart[r] = t.optString("s", "");
+                d.slotEnd[r] = t.optString("e", "");
+            }
+        }
+
+        String schedId = ScheduleCache.currentId(this);
+        JSONArray courses = scheduleData.optJSONArray("courses");
+        d.placements = effectivePlacementsForWeek(week);
+        d.conflicts = PlacementResolver.conflictCounts(d.placements);
+        d.ghosts = buildGhosts(courses, week, schedId);
+        appendAdjustLines(d, schedId, week);
+
+        scheduleView.setVisibility(View.VISIBLE);
+        roomView.setVisibility(View.GONE);
+        scheduleView.render(d);
+        showContentView(resultScroll);
+        applyUi(UiState.SCHEDULE_DATA);
     }
 
-    private String emptyScheduleHtml() {
-        String name = ScheduleCache.currentName(this);
-        return "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
-                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + "<style>" + scheduleCss + "</style></head><body>"
-                + "<h1>我的课表</h1>"
-                + "<div class=\"empty\"><b>「" + esc(name) + "」还没有内容</b>"
-                + "登录教务处后即可导入本学期课表<br>导入一次即可长期离线查看"
-                // 引导入口：直接在这里把「登录并导入」摆出来，
-                // 用户不用先自己摸到顶栏那个图标是干什么的
-                + "<button class=\"guide\" onclick=\"AndroidResultHost.guideImportSchedule()\">"
-                + "登录教务处并导入课表</button></div>"
-                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」先登录。"
-                + "多张课表可用课表页右上角 ⋮ 添加与切换；课表只从你本人已登录的教务会话读取，"
-                + "保存在手机本地，不会上传。</p>"
-                + "</body></html>";
+    /** 没有课表时的引导页 */
+    private void showScheduleEmpty() {
+        scheduleView.renderEmpty(ScheduleCache.currentName(this));
+        scheduleView.setVisibility(View.VISIBLE);
+        roomView.setVisibility(View.GONE);
+        showContentView(resultScroll);
+        applyUi(UiState.SCHEDULE_EMPTY);
     }
 
     /** 空教室空态：显示引导页（状态是 ROOM_EMPTY，顶栏给「查空教室」） */
     private void showEmptyRoom() {
-        showContentView(resultView);
-        resultView.loadDataWithBaseURL(null, emptyRoomHtml(), "text/html", "UTF-8", null);
+        roomView.renderEmpty();
+        roomView.setVisibility(View.VISIBLE);
+        scheduleView.setVisibility(View.GONE);
+        showContentView(resultScroll);
+        resultScroll.scrollTo(0, 0);
         applyUi(UiState.ROOM_EMPTY);
     }
 
-    /** 空教室页的空态：没有缓存时先给引导，而不是直接把教务登录页糊上来 */
-    private String emptyRoomHtml() {
-        return "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
-                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + "<style>" + css + "</style></head><body>"
-                + "<h1>空闲教室总表</h1>"
-                + "<div class=\"empty\"><b>还没有空教室数据</b>"
-                + "登录教务处后即可查询全校空闲教室<br>查一次会缓存到本机，之后离线也能翻看"
-                + "<button class=\"guide\" onclick=\"AndroidResultHost.guideQueryRooms()\">"
-                + "登录教务处并查询</button></div>"
-                + "<p class=\"tip\">也可以从底部「更多 → 教务处登录」进入。"
-                + "数据实时取自教务系统，不经过任何第三方服务器。</p>"
-                + "</body></html>";
-    }
-
-    /** 调课在原位置留下的「影子」：告诉用户这节课去哪了 / 为什么不见了 */
-    private static final class Ghost {
-        final String name;
-        final String text;
-        final int span;
-        final boolean cancelled;
-
-        Ghost(String name, String text, int span, boolean cancelled) {
-            this.name = name;
-            this.text = text;
-            this.span = span;
-            this.cancelled = cancelled;
-        }
-    }
-
-    /** 课程在本周的实际摆放位置（已经叠加单课调课和整天调休）。 */
-    private static final class CoursePlacement {
-        final JSONObject course;
-        final AdjustCache.Adjust adjust;
-        final int day;
-        final int start;
-        final int end;
-
-        CoursePlacement(JSONObject course, AdjustCache.Adjust adjust, int day, int start, int end) {
-            this.course = course;
-            this.adjust = adjust;
-            this.day = day;
-            this.start = start;
-            this.end = end;
-        }
-
-        boolean overlaps(CoursePlacement other) {
-            return other != null && day == other.day && start <= other.end && other.start <= end;
-        }
-    }
-
     /**
-     * 汇总某一周实际显示的课程。
+     * 把本地调课记录投影成解析器视图。
      *
-     * 这一层同时处理单课调课、停课和整天调休，后续网格、冲突判断和课程详情
-     * 都复用同一份结果，避免三个地方各算一遍后又出现口径不一致。
+     * seq 指回原对象的下标 —— UI 要的教室、原位置、课名都在原对象上，
+     * 算法本身不需要它们。
      */
-    private List<CoursePlacement> effectivePlacementsForWeek(int week) {
-        List<CoursePlacement> out = new ArrayList<>();
-        if (scheduleData == null) return out;
-        JSONArray courses = scheduleData.optJSONArray("courses");
-        if (courses == null) return out;
+    private List<PlacementResolver.Adjustment> projectAdjustments(List<AdjustCache.Adjust> all) {
+        List<PlacementResolver.Adjustment> out = new ArrayList<>(all.size());
+        for (int i = 0; i < all.size(); i++) out.add(projectOne(all, i));
+        return out;
+    }
 
-        String schedId = ScheduleCache.currentId(this);
-        Map<String, AdjustCache.Adjust> adjByKey = new HashMap<>();
-        for (AdjustCache.Adjust a : AdjustCache.forWeek(this, schedId, week)) {
-            adjByKey.put(a.courseKey, a);
+    private PlacementResolver.Adjustment projectOne(List<AdjustCache.Adjust> all, int index) {
+        AdjustCache.Adjust a = all.get(index);
+        return new PlacementResolver.Adjustment(index, a.courseKey, a.name, a.scope, a.week,
+                a.day, a.startSection, a.endSection, a.targetWeek, a.srcDay,
+                a.srcStart, a.srcEnd, a.room);
+    }
+
+    /** 单条记录 → 解析器视图；找不到（或为 null）返回 null */
+    private PlacementResolver.Adjustment projectionOf(String schedId, AdjustCache.Adjust src) {
+        if (src == null) return null;
+        List<AdjustCache.Adjust> all = AdjustCache.list(this, schedId);
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i) == src) return projectOne(all, i);
         }
+        return null;
+    }
 
-        Map<Integer, AdjustCache.Adjust> dayOut = new HashMap<>();
-        List<AdjustCache.Adjust> dayIns = new ArrayList<>();
-        for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
-            if (m.week == week) dayOut.put(m.srcDay, m);
-            if (m.targetWeek == week) dayIns.add(m);
-        }
-
-        for (int i = 0; i < courses.length(); i++) {
-            JSONObject c = courses.optJSONObject(i);
-            if (c == null || !inWeek(c.optJSONArray("weeks"), week)) continue;
-            AdjustCache.Adjust a = adjByKey.get(courseKey(c));
-            if (a != null && a.isCancelled()) continue;
-            // 整天调休优先移走原位置；但用户又对这门课做过单节调课时，
-            // 以单节调课的目标位置显示。
-            if (dayOut.containsKey(c.optInt("day", 0)) && a == null) continue;
-
-            int day = c.optInt("day", 0);
-            int st = c.optInt("startSection", 0);
-            int en = c.optInt("endSection", st);
-            if (a != null) {
-                day = a.day;
-                st = a.startSection;
-                en = a.endSection;
-            }
-            if (day < 1 || day > 7 || st < 1 || st > PERIODS) continue;
-            if (en < st) en = st;
-            if (en > PERIODS) en = PERIODS;
-            out.add(new CoursePlacement(c, a, day, st, en));
-        }
-
-        // 整天调休搬入的课程，其 weeks 属于源周，需要单独补进目标周。
-        for (AdjustCache.Adjust m : dayIns) {
-            for (int i = 0; i < courses.length(); i++) {
-                JSONObject c = courses.optJSONObject(i);
-                if (c == null || c.optInt("day", 0) != m.srcDay) continue;
-                if (!inWeek(c.optJSONArray("weeks"), m.week)) continue;
-                AdjustCache.Adjust a = adjByKey.get(courseKey(c));
-                // 带单节调课/停课的课主循环已按调整结果摆放，这里不能重复补
-                if (a != null) continue;
-                if (a != null && a.isCancelled()) continue;
-                int day = m.day, st, en;
-                st = c.optInt("startSection", 0);
-                en = c.optInt("endSection", st);
-                if (st < 1 || st > PERIODS) continue;
-                if (en < st) en = st;
-                if (en > PERIODS) en = PERIODS;
-                out.add(new CoursePlacement(c, a != null ? a : m, day, st, en));
-            }
+    /** 第 week 周生效的调课（已按「本周优先每周」去重），返回原始记录 */
+    private List<AdjustCache.Adjust> effectiveAdjusts(String schedId, int week) {
+        List<AdjustCache.Adjust> all = AdjustCache.list(this, schedId);
+        List<AdjustCache.Adjust> out = new ArrayList<>();
+        for (PlacementResolver.Adjustment a
+                : PlacementResolver.effectiveAdjustments(projectAdjustments(all), week)) {
+            out.add(all.get(a.seq));
         }
         return out;
     }
 
-    /** 同一格或跨节次重叠的课程全部计入冲突数。 */
-    private static Map<CoursePlacement, Integer> computeConflictCounts(
-            List<CoursePlacement>[][] grid) {
-        Map<CoursePlacement, Integer> counts = new HashMap<>();
-        for (int day = 0; day < 7; day++) {
-            List<CoursePlacement> all = new ArrayList<>();
-            for (int row = 0; row < PERIODS; row++) {
-                List<CoursePlacement> bucket = grid[row][day];
-                if (bucket != null) all.addAll(bucket);
-            }
-            for (int i = 0; i < all.size(); i++) {
-                for (int j = i + 1; j < all.size(); j++) {
-                    CoursePlacement a = all.get(i);
-                    CoursePlacement b = all.get(j);
-                    if (!a.overlaps(b)) continue;
-                    if (a.course == b.course) continue;
-                    counts.put(a, counts.getOrDefault(a, 0) + 1);
-                    counts.put(b, counts.getOrDefault(b, 0) + 1);
-                }
-            }
-        }
-        return counts;
-    }
-
-    /** 生成课表周视图 HTML */
-    @SuppressWarnings("unchecked")
-    private String buildScheduleHtml(JSONObject o, int week) throws Exception {
-        JSONArray courses = o.getJSONArray("courses");
-        long weekMon = weekMonday(week);
-
-        // 课表外观：周六/周日可以整列隐藏（很多人周末没课，藏掉表格更清爽）
-        boolean showSat = prefs().getBoolean(KEY_SHOW_SAT, true);
-        boolean showSun = prefs().getBoolean(KEY_SHOW_SUN, true);
-        List<Integer> visCols = new ArrayList<>();   // 显示的列 → 真实星期(1-7)
-        for (int d = 1; d <= 7; d++) {
-            if (d == 6 && !showSat) continue;
-            if (d == 7 && !showSun) continue;
-            visCols.add(d);
-        }
-        if (visCols.isEmpty()) {   // 兜底：全藏了就没法看了
-            visCols.add(6);
-            visCols.add(7);
-        }
-
-        // 今天所在的星期（1=周一 … 7=周日）；不在本周则为 -1。
-        // 渲染时遍历 visCols，被隐藏的列不会输出，所以这里无需再管显隐。
-        int todayDay = -1;
-        if (mondayOf(System.currentTimeMillis()) == weekMon) {
-            // 复用 weekdayOf（1=周一 … 7=周日）。
-            // ⚠️ 早先这里手写成 `dow - Calendar.MONDAY`，漏了 +1：
-            // Calendar 里 MONDAY=2，周五的 dow=6 → 算出 4（周四），
-            // 于是周一到周六的高亮整整偏了一列，周四被当成「今天」。
-            todayDay = weekdayOf(System.currentTimeMillis());
-        }
-
-        // ── 调课：本地调整 ────────────────────────────────────────────
-        // 调整只影响显示：教务的数据一个字节都不改，重新导入课表后记录依然有效。
-        final String schedId = ScheduleCache.currentId(this);
-        final List<AdjustCache.Adjust> adjusts = AdjustCache.forWeek(this, schedId, week);
-        Map<String, AdjustCache.Adjust> adjByKey = new HashMap<>();
-        for (AdjustCache.Adjust a : adjusts) adjByKey.put(a.courseKey, a);
-
-        Map<Integer, AdjustCache.Adjust> dayOut = new HashMap<>();
-        List<AdjustCache.Adjust> dayIns = new ArrayList<>();
-        for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
-            if (m.week == week) dayOut.put(m.srcDay, m);
-            if (m.targetWeek == week) dayIns.add(m);
-        }
-
-        List<CoursePlacement>[][] grid = new List[PERIODS][7];
-        boolean[][] covered = new boolean[PERIODS][7];
-        Ghost[][] ghost = new Ghost[PERIODS][7];
-        boolean[][] ghostCovered = new boolean[PERIODS][7];
-
-        // 原位置影子：整天调休、停课、单课改时间后，都保留明确的去向提示。
-        JSONArray allCourses = o.optJSONArray("courses");
-        if (allCourses != null) {
-            for (int i = 0; i < allCourses.length(); i++) {
-                JSONObject c = allCourses.optJSONObject(i);
-                if (c == null || !inWeek(c.optJSONArray("weeks"), week)) continue;
-                int day = c.optInt("day", 0);
-                int st = c.optInt("startSection", 0);
-                int en = c.optInt("endSection", st);
-                if (day < 1 || day > 7 || st < 1 || st > PERIODS) continue;
-                if (en < st) en = st;
-                if (en > PERIODS) en = PERIODS;
-
-                String name = c.optString("name", "");
-                AdjustCache.Adjust dm = dayOut.get(day);
-                if (dm != null) {
-                    ghost[st - 1][day - 1] = new Ghost(name,
-                            "调休至 " + dateOfWeekDay(dm.targetWeek, dm.day),
-                            en - st + 1, false);
-                    continue;
-                }
-
-                AdjustCache.Adjust a = adjByKey.get(courseKey(c));
-                if (a == null) continue;
-                if (a.isCancelled()) {
-                    ghost[st - 1][day - 1] = new Ghost(name, "本周停课", en - st + 1, true);
-                } else if (a.day != day || a.startSection != st || a.endSection != en) {
-                    ghost[st - 1][day - 1] = new Ghost(name,
-                            "已调至 周" + wdCn(a.day) + " "
-                                    + a.startSection + "-" + a.endSection + " 节",
-                            en - st + 1, false);
-                }
-            }
-        }
-
-        // 同一个格子保留全部课程；用户在详情里选过哪门，就把那门渲染成主卡。
-        for (CoursePlacement p : effectivePlacementsForWeek(week)) {
-            int r = p.start - 1, col = p.day - 1;
-            List<CoursePlacement> bucket = grid[r][col];
-            if (bucket == null) {
-                bucket = new ArrayList<>();
-                grid[r][col] = bucket;
-            }
-            bucket.add(p);
-            for (int k = r + 1; k < p.end; k++) covered[k][col] = true;
-        }
-        Map<CoursePlacement, Integer> conflictCounts = computeConflictCounts(grid);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
-        sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-        sb.append("<title>我的课表</title><style>").append(scheduleCss).append("</style>");
-        sb.append("<style>:root{--page-bg:").append(cssColor(ThemeStore.background(this)))
-                .append(";--surface:").append(cssColor(ThemeStore.surface(this)))
-                .append(";--accent:").append(cssColor(ThemeStore.accent(this)))
-                .append(";--accent-dark:").append(cssColor(darkenColor(ThemeStore.accent(this), .78f)))
-                .append(";}</style></head><body>");
-        // 标题用「当前课表名」：多张课表之后，光写「我的课表」分不清在看哪一张
-        sb.append("<h1 class=\"term-title\">")
-                .append(esc(ScheduleCache.currentName(this))).append("</h1>");
-        String term = o.optString("termName", "");
-        sb.append("<p class=\"sub\">");
-        if (!term.isEmpty() && !term.equals(ScheduleCache.currentName(this))) {
-            sb.append(esc(term)).append(" · ");
-        }
-        sb.append("更新于 ").append(esc(o.optString("updated", ""))).append("</p>");
-
-        // 周次条：中间只显示「第 N 周」。开学日期的设置挪进了
-        // 「课表设置」页（点中间改日期是个藏得太深的入口，用户反馈过）。
-        sb.append("<div class=\"weekbar\">")
-                .append("<button onclick=\"AndroidResultHost.prevWeek()\">‹ 上周</button>")
-                .append("<div class=\"cur\">第 ").append(week).append(" 周</div>")
-                .append("<button onclick=\"AndroidResultHost.nextWeek()\">下周 ›</button>")
-                .append("<button class=\"today\" onclick=\"AndroidResultHost.thisWeek()\">本周</button>")
-                .append("</div>");
-
-        sb.append("<div class=\"gridwrap\"><table class=\"grid\"><thead><tr>");
-        sb.append("<th class=\"corner\"></th>");
-        for (int d : visCols) {
-            int c = d - 1;
-            sb.append("<th").append(d == todayDay ? " class=\"today\"" : "").append(">")
-                    .append("<span class=\"wd\">").append(WD_CN[c]).append("</span>")
-                    .append("<span class=\"dt\">").append(mdStr(weekMon + c * DAY_MS))
-                    .append("</span></th>");
-        }
-        sb.append("</tr></thead><tbody>");
-
-        JSONArray slots = o.optJSONArray("timeSlots");
-        for (int r = 0; r < PERIODS; r++) {
-            sb.append("<tr><td class=\"per\"><span class=\"no\">").append(r + 1).append("</span>");
-            String st = "", et = "";
-            if (slots != null && slots.length() > r) {
-                JSONObject t = slots.optJSONObject(r);
-                if (t != null) {
-                    st = t.optString("s", "");
-                    et = t.optString("e", "");
-                }
-            }
-            sb.append("<span class=\"st\">").append(esc(st)).append("</span>")
-                    .append("<span class=\"et\">").append(esc(et)).append("</span></td>");
-
-            for (int d : visCols) {
-                int c = d - 1;
-                if (covered[r][c]) continue;      // 已被上方 rowspan 占用
-                List<CoursePlacement> bucket = grid[r][c];
-                CoursePlacement placement = pickConflictPlacement(bucket, r, c);
-                if (placement != null) {
-                    JSONObject co = placement.course;
-                    AdjustCache.Adjust adj = placement.adjust;
-                    int cs = placement.start;
-                    int ce = placement.end;
-                    int span = clamp(ce - cs + 1, 1, PERIODS - r);
-                    String nm = co.optString("name", "");
-                    // 调过课的卡片要显示调整后的教室，否则用户会按旧教室跑错楼
-                    String room = (adj != null && !adj.room.isEmpty())
-                            ? adj.room : co.optString("position", "");
-                    int conflicts = conflictCounts.getOrDefault(placement, 0);
-                    sb.append("<td class=\"cell\" rowspan=\"").append(span).append("\">")
-                            .append("<div class=\"course c").append(courseColorIdx(nm))
-                            .append(adj != null ? " adj" : "")
-                            .append(conflicts > 0 ? " conflict" : "")
-                            .append("\" onclick=\"AndroidResultHost.onCourseClick(")
-                            .append(d).append(",").append(cs).append(",").append(ce)
-                            .append(")\">")
-                            .append("<div class=\"nm\">").append(esc(nm)).append("</div>")
-                            .append("<div class=\"rm\">").append(esc(room)).append("</div>")
-                            .append(adj != null ? "<span class=\"tag\">调</span>" : "")
-                            .append(conflicts > 0
-                                    ? "<span class=\"tag conflict\">冲突</span>" : "")
-                            .append("</div></td>");
-                } else if (ghost[r][c] != null && !ghostCovered[r][c]) {
-                    Ghost g = ghost[r][c];
-                    int span = clamp(g.span, 1, PERIODS - r);
-                    for (int k = r + 1; k < r + span; k++) ghostCovered[k][c] = true;
-                    sb.append("<td class=\"cell\" rowspan=\"").append(span)
-                            .append("\" onclick=\"AndroidResultHost.onGhostClick(")
-                            .append(d).append(",").append(c + 1).append(",").append(r + 1)
-                            .append(")\">")
-                            .append("<div class=\"ghost").append(g.cancelled ? " cancel" : "")
-                            .append("\"><b>").append(esc(g.name)).append("</b>")
-                            .append("<span>").append(esc(g.text)).append("</span></div></td>");
-                } else {
-                    // 没课的时段：点一下直接查这个时段的空闲教室
-                    sb.append("<td class=\"cell free\"><div class=\"free-slot\" "
-                                    + "onclick=\"AndroidResultHost.onFreeClick(")
-                            .append(d).append(",").append(r + 1)
-                            .append(")\"><span class=\"plus\">+</span>"
-                                    + "<span class=\"fd\">空教室</span></div></td>");
-                }
-            }
-            sb.append("</tr>");
-        }
-        sb.append("</tbody></table></div>");
-
-        // 本周调课清单：影子可能被别的课挡住（同一格只画得下一个），
-        // 清单保证「这周改了哪些课」一定看得到，不必再去翻设置面板。
-        // 计数与 dayMovesOf 用同一份去重后的列表，同周调休不重复计入。
-        List<AdjustCache.Adjust> dayMoves = dayMovesOf(week, dayOut, dayIns);
-        int adjustCount = adjusts.size() + dayMoves.size();
-        if (adjustCount > 0) {
-            sb.append("<div class=\"adjsum\"><b>本周调课 · ").append(adjustCount).append(" 条</b>");
-            for (AdjustCache.Adjust m : dayMoves) {
-                if (m.week == week) {
-                    sb.append("<div class=\"row\">· ").append(dateOfWeekDay(m.week, m.srcDay))
-                            .append(" 全天 → ").append(dateOfWeekDay(m.targetWeek, m.day))
-                            .append("（调休）</div>");
-                } else {
-                    sb.append("<div class=\"row\">· ").append(dateOfWeekDay(m.week, m.srcDay))
-                            .append(" 全天 → 本周 ").append(dateOfWeekDay(m.targetWeek, m.day))
-                            .append("（调休）</div>");
-                }
-            }
-            for (AdjustCache.Adjust a : adjusts) {
-                String scope = AdjustCache.SCOPE_ALL.equals(a.scope) ? "（每周）" : "";
-                sb.append("<div class=\"row\">· ").append(esc(a.name));
-                if (a.isCancelled()) {
-                    sb.append(" 周").append(wdCn(a.srcDay))
-                            .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
-                            .append(" 节 <b>停课</b>");
-                } else {
-                    sb.append(" 由 周").append(wdCn(a.srcDay))
-                            .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
-                            .append(" 节 → 周").append(wdCn(a.day))
-                            .append(" ").append(a.startSection).append("-").append(a.endSection)
-                            .append(" 节");
-                }
-                sb.append(scope).append("</div>");
-            }
-            sb.append("<div class=\"row hint\">在「⋮ → 调课」里可以修改或撤销</div></div>");
-        }
-
-        sb.append("<p class=\"tip\">点 <b>空白时段</b> 查这个时间的空闲教室；"
-                + "点 <b>课程卡片</b> 看课程详情；"
-                + "老师临时挪课 / 换教室，用右上角 <b>⋮ → 调课</b> 改本地显示。</p>");
-        sb.append("<p class=\"foot\">课表保存在手机本地，不会上传任何信息。</p>");
-        sb.append("</body></html>");
-        return sb.toString();
-    }
-
-    /** 冲突格子的主卡：优先用用户在详情里选过的课程，否则保留第一门。 */
-    private CoursePlacement pickConflictPlacement(
-            List<CoursePlacement> bucket, int row, int col) {
-        if (bucket == null || bucket.isEmpty()) return null;
-        CoursePlacement first = bucket.get(0);
-        if (bucket.size() == 1) return first;
-        String pref = conflictPrefs.get(row + "|" + col);
-        if (pref == null) return first;
-        for (CoursePlacement p : bucket) {
-            if (pref.equals(courseKey(p.course))) return p;
-        }
-        return first;
-    }
-
-    /**
-     * 调课清单里整天调休部分的条目（本周搬出的 + 搬入的）。
-     *
-     * 源周=目标周的同周调休（如「周一 → 本周六」）会同时命中 dayOut 和
-     * dayIns —— 必须按对象去重，否则清单里同一条调休出现两次，
-     * 「本周调课 · N 条」也跟着虚高（实测两条同周调休 + 一条单节调课
-     * 显示成 5 条，应为 3 条）。Adjust 未重写 equals/hashCode，
-     * Set 按对象身份去重，正好符合需求。
-     */
-    private static List<AdjustCache.Adjust> dayMovesOf(int week,
-                                                       Map<Integer, AdjustCache.Adjust> dayOut,
-                                                       List<AdjustCache.Adjust> dayIns) {
+    /** 第 week 周涉及的整天调休：搬出的 + 搬入的，同周调休只算一条 */
+    private List<AdjustCache.Adjust> dayMovesForWeek(String schedId, int week) {
         List<AdjustCache.Adjust> out = new ArrayList<>();
-        Set<AdjustCache.Adjust> seen = new LinkedHashSet<>();
-        for (AdjustCache.Adjust m : dayOut.values()) {
-            if (m.week == week) {
-                out.add(m);
-                seen.add(m);
-            }
+        for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
+            if (m.week == week || m.targetWeek == week) out.add(m);
         }
-        for (AdjustCache.Adjust m : dayIns) {
-            if (seen.contains(m)) continue;
-            out.add(m);
-        }
-        // dayOut 是 HashMap，遍历顺序不确定；按源日排一遍，清单顺序稳定可读
+        // 源日排序：清单顺序稳定可读（AdjustCache.dayMoves 的顺序取决于文件写入顺序）
         out.sort((x, y) -> {
             int c = Integer.compare(x.srcDay, y.srcDay);
             if (c != 0) return c;
@@ -5205,15 +4433,150 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 空教室接口返回的时段定义，与 inject.js 的 SLOTS 一一对应。
+     * 汇总某一周实际显示的课程。
      *
-     * ⚠️ 这是「查询时段」，不是「课表节次」：一个时段含 2 节，且第 5 项
+     * 算法本体在 {@link PlacementResolver}（纯逻辑、可单测），这里只把本地的调课记录
+     * 投影成它的输入。网格、冲突判断和课程详情都复用这一份结果，避免口径不一致。
+     */
+    private List<PlacementResolver.Placement> effectivePlacementsForWeek(int week) {
+        List<PlacementResolver.Placement> out = new ArrayList<>();
+        if (scheduleData == null) return out;
+        JSONArray courses = scheduleData.optJSONArray("courses");
+        if (courses == null) return out;
+
+        List<AdjustCache.Adjust> all = AdjustCache.list(this, ScheduleCache.currentId(this));
+        return PlacementResolver.resolve(courses, week, projectAdjustments(all));
+    }
+
+    /**
+     * 原位置影子：整天调休、停课、单课改时间后，都保留明确的去向提示。
+     *
+     * 影子可能被同一格的课程挡住（一格只画得下一个），所以另外还有下面的调课清单兜底。
+     */
+    private List<ScheduleNativeView.Ghost> buildGhosts(
+            JSONArray courses, int week, String schedId) {
+        List<ScheduleNativeView.Ghost> out = new ArrayList<>();
+        if (courses == null) return out;
+
+        Map<String, AdjustCache.Adjust> adjByKey = new HashMap<>();
+        for (AdjustCache.Adjust a : effectiveAdjusts(schedId, week)) {
+            adjByKey.put(a.courseKey, a);
+        }
+        Map<Integer, AdjustCache.Adjust> dayOut = new HashMap<>();
+        for (AdjustCache.Adjust m : AdjustCache.dayMoves(this, schedId)) {
+            if (m.week == week) dayOut.put(m.srcDay, m);
+        }
+
+        for (int i = 0; i < courses.length(); i++) {
+            JSONObject c = courses.optJSONObject(i);
+            if (c == null || !inWeek(c.optJSONArray("weeks"), week)) continue;
+            int day = c.optInt("day", 0);
+            int st = c.optInt("startSection", 0);
+            int en = c.optInt("endSection", st);
+            if (day < 1 || day > 7 || st < 1 || st > PERIODS) continue;
+            if (en < st) en = st;
+            if (en > PERIODS) en = PERIODS;
+            int span = en - st + 1;
+            String name = c.optString("name", "");
+
+            AdjustCache.Adjust dm = dayOut.get(day);
+            if (dm != null) {
+                out.add(new ScheduleNativeView.Ghost(day, st, span, name,
+                        "调休至 " + dateOfWeekDay(dm.targetWeek, dm.day), false));
+                continue;
+            }
+
+            AdjustCache.Adjust a = adjByKey.get(courseKey(c));
+            if (a == null) continue;
+            if (a.isCancelled()) {
+                out.add(new ScheduleNativeView.Ghost(day, st, span, name, "本周停课", true));
+            } else if (a.day != day || a.startSection != st || a.endSection != en) {
+                out.add(new ScheduleNativeView.Ghost(day, st, span, name,
+                        "已调至 周" + wdCn(a.day) + " "
+                                + a.startSection + "-" + a.endSection + " 节", false));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 本周调课清单的文本行。
+     *
+     * 清单保证「这周改了哪些课」一定看得到 —— 影子会被同一格的课程挡住，
+     * 只靠网格会漏信息。
+     */
+    private void appendAdjustLines(ScheduleNativeView.Data in, String schedId, int week) {
+        List<AdjustCache.Adjust> dayMoves = dayMovesForWeek(schedId, week);
+        for (AdjustCache.Adjust m : dayMoves) {
+            String line = dateOfWeekDay(m.week, m.srcDay) + " 全天 → ";
+            if (m.week == week) {
+                line += dateOfWeekDay(m.targetWeek, m.day) + "（调休）";
+            } else {
+                line += "本周 " + dateOfWeekDay(m.targetWeek, m.day) + "（调休）";
+            }
+            in.dayMoveLines.add(line);
+        }
+
+        for (AdjustCache.Adjust a : effectiveAdjusts(schedId, week)) {
+            StringBuilder line = new StringBuilder(a.name);
+            if (a.isCancelled()) {
+                line.append(" 周").append(wdCn(a.srcDay))
+                        .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
+                        .append(" 节 停课");
+            } else {
+                line.append(" 由 周").append(wdCn(a.srcDay))
+                        .append(" ").append(a.srcStart).append("-").append(a.srcEnd)
+                        .append(" 节 → 周").append(wdCn(a.day))
+                        .append(" ").append(a.startSection).append("-").append(a.endSection)
+                        .append(" 节");
+            }
+            if (AdjustCache.SCOPE_ALL.equals(a.scope)) line.append("（每周）");
+            in.adjustLines.add(line.toString());
+        }
+    }
+
+    /**
+     * 空教室接口返回的时段定义，与 inject.js 的 SLOTS 一一对应（顺序必须一致）。
+     *
+     * ⚠️ 这是「查询时段」，不是「课表节次」：一个时段含 2 节，最后一项
      * 「昼间1-8节」是教务为了显示而混进来的合并项，跨度 8 节。
      * 所以**绝不能拿课表的节次直接当它的下标** —— 第 2 节会指到「上午3-4节」。
      */
     private static final int[][] FREE_SLOTS = {
-            {1, 2}, {3, 4}, {5, 6}, {7, 8}, {1, 8}, {9, 10}, {11, 12}
+            {1, 2}, {3, 4}, {5, 6}, {7, 8}, {9, 10}, {11, 12}, {1, 8}
     };
+
+    /** 「昼间1-8节」这个合并项：跨度 8 节，不放进单时段的快捷切换条 */
+    private static boolean isMergedSlot(int index) {
+        return FREE_SLOTS[index][0] == 1 && FREE_SLOTS[index][1] == 8;
+    }
+
+    /** 时段标签里的起止节次，如「下午5-6节」→ 5,6、「昼间1-8节」→ 1,8 */
+    private static final java.util.regex.Pattern SLOT_RANGE =
+            java.util.regex.Pattern.compile("(\\d+)\\s*-\\s*(\\d+)");
+
+    /**
+     * 按起止节次在 slots 里找时段的下标。
+     *
+     * 不依赖数组下标：时段顺序调整过（「昼间1-8节」挪到末尾），
+     * 旧缓存里的下标已经对不上，但标签里的节次区间始终是准的。
+     */
+    private static int findSlotIndexByRange(JSONArray slots, int qb, int qe) {
+        if (slots == null) return -1;
+        for (int i = 0; i < slots.length(); i++) {
+            JSONObject s = slots.optJSONObject(i);
+            if (s == null) continue;
+            java.util.regex.Matcher m = SLOT_RANGE.matcher(s.optString("label", ""));
+            if (!m.find()) continue;
+            try {
+                if (Integer.parseInt(m.group(1)) == qb
+                        && Integer.parseInt(m.group(2)) == qe) return i;
+            } catch (NumberFormatException ignored) {
+                // 标签异常就跳过，交给下标兜底
+            }
+        }
+        return -1;
+    }
 
     /**
      * 课表节次 → 空教室时段下标。
@@ -5294,36 +4657,39 @@ public class MainActivity extends Activity {
         singleTe = qe;
         singleLabel = label;
         try {
-            // 缓存视图和教务单时段查询保持一致：只显示命中的那组时段。
-            // 切换时段仍可用结果页顶部按钮，每次都从缓存中重新筛。
+            // 缓存里本来就有整天的数据，不要裁成一个时段 ——
+            // 模型需要前/后时段才能算出「比上一时段新增」和「下个时段将上课」，
+            // 渲染时通过 focus 只画目标那一组。
             JSONObject singleDayView = new JSONObject(cachedDay.toString());
             JSONArray allSlots = singleDayView.optJSONArray("slots");
-            JSONObject picked = null;
+            int focus = -1;
             if (allSlots != null) {
-                for (int i = 0; i < allSlots.length(); i++) {
-                    JSONObject slot = allSlots.optJSONObject(i);
-                    if (slot == null) continue;
-                    JSONArray rooms = slot.optJSONObject("buildings") == null
-                            ? null : slot.optJSONObject("buildings").names();
-                    if (slot.optBoolean("ok", false)
-                            && (rooms != null && rooms.length() > 0)) {
-                        // 匹配不到明确时段时，退回「第一个可用时段」，避免页面为空。
-                        if (picked == null) picked = slot;
+                // 按「起止节次」精确匹配，不依赖数组下标 ——
+                // 时段顺序变过（「昼间1-8节」挪到末尾），旧缓存的下标会对不上。
+                focus = findSlotIndexByRange(allSlots, qb, qe);
+                if (focus < 0) {
+                    // 兜底：第一个有数据的时段，避免页面为空
+                    for (int i = 0; i < allSlots.length(); i++) {
+                        JSONObject slot = allSlots.optJSONObject(i);
+                        if (slot == null) continue;
+                        JSONArray rooms = slot.optJSONObject("buildings") == null
+                                ? null : slot.optJSONObject("buildings").names();
+                        if (slot.optBoolean("ok", false)
+                                && rooms != null && rooms.length() > 0) {
+                            focus = i;
+                            break;
+                        }
                     }
                 }
             }
-            if (slotIdx >= 0 && slotIdx < allSlots.length()) {
-                picked = allSlots.optJSONObject(slotIdx);
-            }
-            if (picked == null) {
+            if (focus < 0) {
                 Toast.makeText(this, "缓存中没有可用时段", Toast.LENGTH_SHORT).show();
                 return;
             }
-            JSONArray slots = new JSONArray().put(picked);
-            singleDayView.put("slots", slots);
             JSONObject view = new JSONObject();
             view.put("ok", true);
             view.put("single", true);
+            view.put("focus", focus);
             view.put("days", new JSONArray().put(singleDayView));
             view.put("fromCache", true);
             view.put("cacheAgeText", ResultCache.ageText(this));
@@ -5332,7 +4698,7 @@ public class MainActivity extends Activity {
 
             if (currentTab != TAB_CLASSROOM) switchTab(TAB_CLASSROOM);
             else applyIdleUi();
-            showHtml(buildHtml(view));
+            showRoom(view);
             statusText.setText(label + " · 来自本机缓存");
             setEamsBrowserOverlay(false);
         } catch (Exception e) {
@@ -5374,9 +4740,29 @@ public class MainActivity extends Activity {
         statusText.setText("正在查询 " + singleLabel + " 的空教室…");
         setBusy(true);
         loginView.evaluateJavascript(injectJs, null);
+        // 顺带查前后相邻两组（跳过「昼间1-8节」），否则单看一组算不出
+        // 「比上一时段新增」和「下个时段将上课」这两个标记。
+        int idx = slotIndexOf(singleTb);
+        int p = neighborSlotIndex(idx, -1);
+        int n = neighborSlotIndex(idx, 1);
+        int ptb = p >= 0 ? FREE_SLOTS[p][0] : 0;
+        int pte = p >= 0 ? FREE_SLOTS[p][1] : 0;
+        int ntb = n >= 0 ? FREE_SLOTS[n][0] : 0;
+        int nte = n >= 0 ? FREE_SLOTS[n][1] : 0;
         loginView.evaluateJavascript("window.nqFetchSlot('" + singleDate + "',"
                 + singleTb + "," + singleTe + ",'"
-                + singleLabel.replace("'", "") + "');", null);
+                + singleLabel.replace("'", "") + "',"
+                + ptb + "," + pte + "," + ntb + "," + nte + ");", null);
+    }
+
+    /** 相邻的「真实时段」下标；跳过「昼间1-8节」这个合并项，到头返回 -1 */
+    private static int neighborSlotIndex(int slotIdx, int dir) {
+        if (slotIdx < 0) return -1;
+        for (int i = slotIdx + dir; i >= 0 && i < FREE_SLOTS.length; i += dir) {
+            if (isMergedSlot(i)) continue;
+            return i;
+        }
+        return -1;
     }
 
     private boolean hasRoomCache() {
@@ -5478,10 +4864,10 @@ public class MainActivity extends Activity {
 
     private void showCourseDetail(int day, int st, int en, String preferredKey) {
         int week = currentWeek();
-        List<CoursePlacement> placements = effectivePlacementsForWeek(week);
-        CoursePlacement hit = null;
-        CoursePlacement firstAtPosition = null;
-        for (CoursePlacement p : placements) {
+        List<PlacementResolver.Placement> placements = effectivePlacementsForWeek(week);
+        PlacementResolver.Placement hit = null;
+        PlacementResolver.Placement firstAtPosition = null;
+        for (PlacementResolver.Placement p : placements) {
             if (p.day != day || p.start != st || p.end != en) continue;
             if (firstAtPosition == null) firstAtPosition = p;
             if (preferredKey != null && preferredKey.equals(courseKey(p.course))) {
@@ -5496,9 +4882,9 @@ public class MainActivity extends Activity {
         }
 
         // 选中课程放在第一行，其余重叠课程随后列出。
-        List<CoursePlacement> conflictCourses = new ArrayList<>();
+        List<PlacementResolver.Placement> conflictCourses = new ArrayList<>();
         conflictCourses.add(hit);
-        for (CoursePlacement p : placements) {
+        for (PlacementResolver.Placement p : placements) {
             if (p == hit || !p.overlaps(hit)) continue;
             if (p.course == hit.course) continue;
             conflictCourses.add(p);
@@ -5543,16 +4929,17 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "这节课本周不上", Toast.LENGTH_SHORT).show();
             return;
         }
-        CoursePlacement placement = new CoursePlacement(target,
-                dm != null ? dm : findEffective(schedId, courseKey(target), week),
-                day, st, Math.max(en, st));
-        List<CoursePlacement> conflictCourses = new ArrayList<>();
+        AdjustCache.Adjust src = dm != null
+                ? dm : findEffective(schedId, courseKey(target), week);
+        PlacementResolver.Placement placement = new PlacementResolver.Placement(target,
+                projectionOf(schedId, src), day, st, Math.max(en, st));
+        List<PlacementResolver.Placement> conflictCourses = new ArrayList<>();
         conflictCourses.add(placement);
         showCourseDetailSheet(placement, conflictCourses);
     }
 
-    private void showCourseDetailSheet(final CoursePlacement hit,
-                                       final List<CoursePlacement> conflictCourses) {
+    private void showCourseDetailSheet(final PlacementResolver.Placement hit,
+                                       final List<PlacementResolver.Placement> conflictCourses) {
         View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_course_detail, null);
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -5569,7 +4956,7 @@ public class MainActivity extends Activity {
                     WindowManager.LayoutParams.WRAP_CONTENT);
         }
 
-        final CoursePlacement[] current = {hit};
+        final PlacementResolver.Placement[] current = {hit};
         TextView title = sheet.findViewById(R.id.tvCourseTitle);
         TextView weeksView = sheet.findViewById(R.id.tvCourseWeeks);
         TextView timeView = sheet.findViewById(R.id.tvCourseTime);
@@ -5578,7 +4965,7 @@ public class MainActivity extends Activity {
         TextView adjustView = sheet.findViewById(R.id.tvCourseAdjust);
         TextView freeButton = sheet.findViewById(R.id.btnCourseFree);
         Runnable refreshUi = () -> {
-            CoursePlacement p = current[0];
+            PlacementResolver.Placement p = current[0];
             JSONObject course = p.course;
             String name = course.optString("name", "课程");
             String room = p.adjust != null && !p.adjust.room.isEmpty()
@@ -5622,7 +5009,7 @@ public class MainActivity extends Activity {
             ((TextView) sheet.findViewById(R.id.tvConflictTitle))
                     .setText("时间冲突课程 · " + conflictCourses.size() + " 门");
             int pad = (int) (getResources().getDisplayMetrics().density * 6);
-            for (CoursePlacement p : conflictCourses) {
+            for (PlacementResolver.Placement p : conflictCourses) {
                 RadioButton rb = new RadioButton(this);
                 rb.setText(p.course.optString("name", "课程"));
                 rb.setTextSize(16f);
@@ -5654,7 +5041,7 @@ public class MainActivity extends Activity {
         });
         sheet.findViewById(R.id.btnCourseClose).setOnClickListener(v -> dialog.dismiss());
         sheet.findViewById(R.id.btnCourseCopy).setOnClickListener(v -> {
-            CoursePlacement p = current[0];
+            PlacementResolver.Placement p = current[0];
             JSONObject course = p.course;
             String name = course.optString("name", "课程");
             String room = p.adjust != null && !p.adjust.room.isEmpty()
@@ -5672,7 +5059,7 @@ public class MainActivity extends Activity {
         });
         sheet.findViewById(R.id.btnCourseEdit).setOnClickListener(v -> {
             dialog.dismiss();
-            CoursePlacement p = current[0];
+            PlacementResolver.Placement p = current[0];
             showEditCourseDialog(p.course.optString("name", "课程"), p.course);
         });
         sheet.findViewById(R.id.btnCourseDelete).setOnClickListener(v -> {
@@ -5686,7 +5073,7 @@ public class MainActivity extends Activity {
      * 课程删除范围选择：仅当前周、同位置全部周次、整门课程。
      * 调课记录会按对应范围清理，避免留下孤儿记录。
      */
-    private void showDeleteScopeSheet(final CoursePlacement placement) {
+    private void showDeleteScopeSheet(final PlacementResolver.Placement placement) {
         View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_delete_scope, null);
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -5732,7 +5119,7 @@ public class MainActivity extends Activity {
      * 仅删除当前周显示的这节课。做法不是直接删排课记录，而是从该记录的
      * 周次列表里移掉当前周；这样其他周不受影响。
      */
-    private void deleteCurrentWeekInstance(final CoursePlacement placement) {
+    private void deleteCurrentWeekInstance(final PlacementResolver.Placement placement) {
         JSONObject target = placement.course;
         try {
             JSONArray weeks = target.optJSONArray("weeks");
@@ -5769,7 +5156,7 @@ public class MainActivity extends Activity {
      * 删除同星期同起止节同教师同地点、覆盖当前周的所有排课记录。
      * 这和参考软件的“全部周五同老师同地点”一致。
      */
-    private void deleteSameSlotAcrossWeeks(final CoursePlacement placement) {
+    private void deleteSameSlotAcrossWeeks(final PlacementResolver.Placement placement) {
         try {
             JSONArray cs = scheduleData.optJSONArray("courses");
             if (cs == null) return;

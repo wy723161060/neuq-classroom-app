@@ -18,7 +18,7 @@
         android:gravity="center_vertical"
         android:paddingStart="16dp"
         android:paddingEnd="12dp"
-        android:background="@color/app_background">
+        android:background="@android:color/transparent">
 
         <TextView
             android:id="@+id/statusText"
@@ -258,11 +258,24 @@
             </LinearLayout>
         </LinearLayout>
 
-        <WebView
-            android:id="@+id/resultView"
+        <!--
+          课表 / 空教室：原生视图，共用这一个滚动容器。
+          以前这里是 WebView + 页面里拼 HTML，现在两个视图都是 ViewGroup，
+          由 MainActivity 在 onCreate 里塞进 resultHost。
+        -->
+        <ScrollView
+            android:id="@+id/resultScroll"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone" />
+            android:fillViewport="true"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:id="@+id/resultHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </ScrollView>
 
         <!--
           「更多」页：原生布局而不是 WebView。
@@ -389,9 +402,14 @@
     <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="62dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="6dp"
         android:orientation="horizontal"
-        android:background="@color/app_background"
+        android:background="@drawable/glass_dock"
+        android:elevation="3dp"
+        android:outlineProvider="background"
         android:paddingTop="5dp"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
@@ -423,13 +441,6 @@
                 android:textSize="11.5sp"
                 android:textStyle="bold"
                 android:textColor="@color/brand_blue_bright" />
-
-            <View
-                android:id="@+id/indSchedule"
-                android:layout_width="18dp"
-                android:layout_height="3dp"
-                android:layout_marginTop="3dp"
-                android:background="@drawable/nav_indicator" />
         </LinearLayout>
 
         <LinearLayout
@@ -457,14 +468,6 @@
                 android:text="空教室"
                 android:textSize="11.5sp"
                 android:textColor="@color/text_muted" />
-
-            <View
-                android:id="@+id/indClassroom"
-                android:layout_width="18dp"
-                android:layout_height="3dp"
-                android:layout_marginTop="3dp"
-                android:background="@drawable/nav_indicator"
-                android:visibility="invisible" />
         </LinearLayout>
 
         <!--
@@ -497,14 +500,6 @@
                 android:text="更多"
                 android:textSize="11.5sp"
                 android:textColor="@color/text_muted" />
-
-            <View
-                android:id="@+id/indMore"
-                android:layout_width="18dp"
-                android:layout_height="3dp"
-                android:layout_marginTop="3dp"
-                android:background="@drawable/nav_indicator"
-                android:visibility="invisible" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>
